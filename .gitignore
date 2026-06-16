@@ -1,0 +1,58 @@
+*.lo
+*.la
+*.so
+.libs/
+.deps/
+Makefile
+Makefile.fragments
+Makefile.objects
+aclocal.m4
+autom4te.cache/
+build/
+config.cache
+config.guess
+config.h
+config.h.in
+config.h.in~
+config.log
+config.nice
+config.status
+config.sub
+configure
+configure.ac
+configure~
+depcomp
+install-sh
+libtool
+ltmain.sh
+missing
+mkinstalldirs
+modules/
+tests/**/*.diff
+tests/**/*.exp
+tests/**/*.log
+tests/**/*.out
+tests/**/*.php
+tests/**/*.sh
+
+# Code Coverage Junk
+coverage.info
+coverage/
+*.gcda
+*.gcno
+*.gcov
+
+# Ignore libtool object files and dependency files everywhere
+**/*.lo
+**/*.o
+**/*.dep
+
+# VS Code settings (optional)
+.vscode/
+
+# Core Files
+core.*
+
+# Scratchpads
+/*.php
+/*.diff
