@@ -21,6 +21,7 @@
 #include "php.h"
 #include "grammar.h"
 #include "buffer.h"
+#include "hash.h"
 
 extern zend_class_entry* php_phathom_chart_ce;
 
@@ -59,10 +60,11 @@ typedef struct _php_phathom_items_t {
 typedef struct _php_phathom_chart_t {
     php_phathom_grammar_t grammar;
     php_phathom_buffer_t  buffer;
-    HashTable             index;
-    HashTable             waiting;
-    HashTable             nullable;
-    HashTable             path;
+    zend_arena           *arena;
+    php_phathom_hash_t    index;
+    php_phathom_hash_t    waiting;
+    php_phathom_hash_t    nullable;
+    php_phathom_hash_t    path;
     HashTable             tokens;
     zend_long             position;
     zend_long             limit;

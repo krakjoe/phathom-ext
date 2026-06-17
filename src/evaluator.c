@@ -424,9 +424,10 @@ PHP_METHOD(Evaluator, __invoke) {
     php_phathom_chart_t *chart = evaluator->chart;
 
     /* path[$limit]: the set of items that completed at the end of input. */
-    HashTable *final_path =
-        zend_hash_index_find_ptr(&chart->path, chart->limit);
-    if (!final_path) {
+    php_phathom_hash_t *path =
+        php_phathom_hash_find_index(
+            &chart->path, (uint64_t) chart->limit);
+    if (!path) {
         php_phathom_exception_execute_nomatch(&phathom, evaluator);
         return;
     }
@@ -435,8 +436,7 @@ PHP_METHOD(Evaluator, __invoke) {
     php_phathom_item_t *best_item     = NULL;
     zend_long           best_priority = ZEND_LONG_MIN; /* === false */
 
-    php_phathom_item_t *nitem;
-    ZEND_HASH_FOREACH_PTR(final_path, nitem) {
+    PHP_PHATHOM_HASH_FOREACH_CURRENT(path, php_phathom_item_t, nitem) {
         zend_array *nalt_sym = php_phathom_alternative_symbols(nitem->alternative);
         zend_long   nsym     = (zend_long) zend_hash_num_elements(nalt_sym);
 
@@ -460,7 +460,7 @@ PHP_METHOD(Evaluator, __invoke) {
             best_item     = nitem;
             best_priority = priority;
         }
-    } ZEND_HASH_FOREACH_END();
+    } PHP_PHATHOM_HASH_FOREACH_END();
 
     if (best_item == NULL) {
         php_phathom_exception_execute_nomatch(&phathom, evaluator);

@@ -42,6 +42,16 @@ static zend_always_inline zend_array* php_phathom_alternative_symbols(zend_objec
     return Z_ARR_P(member);
 }
 
+static zend_always_inline zend_object* php_phathom_alternative_symbol(zend_object *obj, zend_long index) {
+    zend_array* symbols =
+        php_phathom_alternative_symbols(obj);
+    zval *symbol = zend_hash_index_find(symbols, index);
+    if (!symbol) {
+        return NULL;
+    }
+    return Z_OBJ_P(Z_UNWRAP_P(symbol));
+}
+
 /* Returns ZEND_LONG_MIN when priority === false (no priority annotation). */
 static zend_always_inline zend_long php_phathom_alternative_priority(zend_object *obj) {
     zval *member = php_phathom_fetch_member(
