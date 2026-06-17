@@ -28,35 +28,21 @@
 zend_class_entry* php_phathom_chart_ce = NULL;
 static zend_object_handlers php_phathom_chart_handlers;
 
-/* {{{ table helpers */
-typedef enum _php_phathom_chart_table_type_t {
-    PHP_PHATHOM_CHART_TABLE_INDEX,
-    PHP_PHATHOM_CHART_TABLE_STRING
-} php_phathom_chart_table_type_t;
+/* {{{ table helper */
+static zend_always_inline php_phathom_hash_t *php_phathom_chart_table(
+    php_phathom_chart_t *chart, php_phathom_hash_t *root, php_phathom_hash_key_t key) {
+    php_phathom_hash_t *table =
+        php_phathom_hash_find(
+            root, key);
 
-typedef struct _php_phathom_chart_table_key_t {
-    php_phathom_chart_table_type_t type;
-    union {
-        zend_long    index;
-        zend_string *string;
-    } value;
-} php_phathom_chart_table_key_t;
-
-static zend_always_inline HashTable* php_phathom_chart_table(
-        HashTable *root,
-        php_phathom_chart_table_key_t key, dtor_func_t dtor) {
-    HashTable *table = key.type == PHP_PHATHOM_CHART_TABLE_INDEX ?
-        zend_hash_index_find_ptr(root, key.value.index) :
-        zend_hash_find_ptr(root, key.value.string);
-    if (!table) {
-        HashTable tabled;
-        zend_hash_init(&tabled, 8, 0, dtor, 0);
-        return key.type == PHP_PHATHOM_CHART_TABLE_INDEX ?
-            zend_hash_index_add_mem(root, key.value.index,
-                &tabled, sizeof(HashTable)) :
-            zend_hash_add_mem(root, key.value.string,
-                &tabled, sizeof(HashTable));
+    if (EXPECTED(table)) {
+        return table;
     }
+
+    table = zend_arena_alloc(
+        &chart->arena, sizeof(php_phathom_hash_t));
+    php_phathom_hash_init(table, &chart->arena, 8);
+    php_phathom_hash_add(root, key, table);
     return table;
 } /* }}} */
 
@@ -70,10 +56,14 @@ zend_object* php_phathom_chart_create(zend_class_entry* type) {
     chart->std.handlers =
         &php_phathom_chart_handlers;
 
-    zend_hash_init(&chart->index,    8, NULL, php_phathom_table_destroy, 0);
-    zend_hash_init(&chart->waiting,  8, NULL, php_phathom_table_destroy, 0);
-    zend_hash_init(&chart->nullable, 8, NULL, php_phathom_table_destroy, 0);
-    zend_hash_init(&chart->path,     8, NULL, php_phathom_table_destroy, 0);
+    chart->arena =
+        zend_arena_create(1024 * 64);
+
+    php_phathom_hash_init(&chart->index,    &chart->arena, 8);
+    php_phathom_hash_init(&chart->waiting,  &chart->arena, 8);
+    php_phathom_hash_init(&chart->nullable, &chart->arena, 8);
+    php_phathom_hash_init(&chart->path,     &chart->arena, 8);
+
     zend_hash_init(&chart->tokens,   8, NULL, ZVAL_PTR_DTOR, 0);
 
     return &chart->std;
@@ -83,10 +73,10 @@ void php_phathom_chart_free(zend_object* std) {
     php_phathom_chart_t* chart =
         php_phathom_chart_fetch(std);
 
-    zend_hash_destroy(&chart->index);
-    zend_hash_destroy(&chart->waiting);
-    zend_hash_destroy(&chart->nullable);
-    zend_hash_destroy(&chart->path);
+    if (chart->arena) {
+        zend_arena_destroy(chart->arena);
+    }
+
     zend_hash_destroy(&chart->tokens);
 
     php_phathom_grammar_free(&chart->grammar);
@@ -101,62 +91,38 @@ static void php_phathom_chart_predict(php_phathom_chart_t*, zend_long, zend_obje
 static bool php_phathom_chart_scan(php_phathom_chart_t*, zend_long, HashTable*);
 
 /* {{{ index */
-static void php_phathom_chart_index_free(zval *zv) {
-    php_phathom_item_t *item = Z_PTR_P(zv);
-    if (item->backs.path) {
-        efree(item->backs.path);
-    }
-    efree(item);
-}
-
 static zend_always_inline php_phathom_item_t* php_phathom_chart_index(
     php_phathom_chart_t* chart, zend_long position, php_phathom_item_t *item, bool *isset) {
-    HashTable *index;
+    php_phathom_hash_t *index;
 
     /* index[pos] */
     index = php_phathom_chart_table(
-        &chart->index, 
-        (php_phathom_chart_table_key_t){
-            .type = PHP_PHATHOM_CHART_TABLE_INDEX,
-            .value = {
-                .index = position
-            }
-        }, php_phathom_table_destroy);
+        chart,
+        &chart->index,
+        php_phathom_hash_key_index((uint64_t) position));
 
     /* index[pos][rule] */
     index = php_phathom_chart_table(
+        chart,
         index,
-        (php_phathom_chart_table_key_t){
-            .type = PHP_PHATHOM_CHART_TABLE_STRING,
-            .value = {
-                .string = item->rule,
-            }
-        }, php_phathom_table_destroy);
+        php_phathom_hash_key_string(item->rule));
 
     /* index[pos][rule][alt] */
     index = php_phathom_chart_table(
+        chart,
         index,
-        (php_phathom_chart_table_key_t){
-            .type = PHP_PHATHOM_CHART_TABLE_INDEX,
-            .value = {
-                .index = item->alt,
-            }
-        }, php_phathom_table_destroy);
+        php_phathom_hash_key_index((uint64_t) item->alt));
 
     /* index[pos][rule][alt][dot] */
     index = php_phathom_chart_table(
+        chart,
         index,
-        (php_phathom_chart_table_key_t){
-            .type = PHP_PHATHOM_CHART_TABLE_INDEX,
-            .value = {
-                .index = item->dot,
-            }
-        }, php_phathom_chart_index_free);
+        php_phathom_hash_key_index((uint64_t) item->dot));
 
     /* index[pos][rule][alt][dot][origin] */
     php_phathom_item_t *slot =
-        zend_hash_index_find_ptr(
-            index, item->origin);
+        php_phathom_hash_find_index(
+            index, (uint64_t) item->origin);
 
     if (UNEXPECTED(slot)) {
         *isset = true;
@@ -164,10 +130,13 @@ static zend_always_inline php_phathom_item_t* php_phathom_chart_index(
     }
 
     *isset = false;
-    slot = emalloc(
+    slot = zend_arena_alloc(
+        &chart->arena,
         sizeof(php_phathom_item_t));
-    zend_hash_index_add_ptr(
-        index, item->origin, slot);
+    php_phathom_hash_add(
+        index,
+        php_phathom_hash_key_index((uint64_t) item->origin),
+        slot);
     return slot;
 }
 
@@ -175,16 +144,17 @@ static zend_always_inline php_phathom_item_t* php_phathom_chart_index(
    Callers use this to skip bpath allocation before calling chart_add. */
 static zend_always_inline bool php_phathom_chart_indexed(
     php_phathom_chart_t *chart, zend_long position, php_phathom_item_t *item) {
-    HashTable *index;
-    if (!(index = zend_hash_index_find_ptr(&chart->index, position)))
+    php_phathom_hash_t *index;
+
+    if (!(index = php_phathom_hash_find_index(&chart->index, (uint64_t) position)))
         return false;
-    if (!(index = zend_hash_find_ptr(index, item->rule)))
+    if (!(index = php_phathom_hash_find_string(index, item->rule)))
         return false;
-    if (!(index = zend_hash_index_find_ptr(index, item->alt)))
+    if (!(index = php_phathom_hash_find_index(index, (uint64_t) item->alt)))
         return false;
-    if (!(index = zend_hash_index_find_ptr(index, item->dot)))
+    if (!(index = php_phathom_hash_find_index(index, (uint64_t) item->dot)))
         return false;
-    if (!(index = zend_hash_index_find_ptr(index, item->origin)))
+    if (!php_phathom_hash_find_index(index, (uint64_t) item->origin))
         return false;
     return true;
 } /* }}}*/
@@ -192,74 +162,68 @@ static zend_always_inline bool php_phathom_chart_indexed(
 /* {{{ path */
 static zend_always_inline void php_phathom_chart_path(php_phathom_chart_t *chart, zend_long position, php_phathom_item_t *item) {
     /* path[position][] = item; */
-    HashTable *path = php_phathom_chart_table(
-        &chart->path, 
-        (php_phathom_chart_table_key_t) {
-            .type = PHP_PHATHOM_CHART_TABLE_INDEX,
-            .value = {
-                .index = position,
-            },
-        },
-        NULL);
-    zend_hash_next_index_insert_ptr(path, item);
+    php_phathom_hash_t *path = php_phathom_chart_table(
+        chart,
+        &chart->path,
+        php_phathom_hash_key_index((uint64_t) position));
+    php_phathom_hash_append(path, item);
 } /* }}} */
 
 /* {{{ nullable */
-static zend_always_inline void php_phathom_chart_nullable(php_phathom_chart_t *chart, zend_long position, php_phathom_item_t *item) {
+static zend_always_inline void php_phathom_chart_nullable(
+    php_phathom_chart_t *chart, zend_long position, php_phathom_item_t *item) {
     /* nullable[position][item->rule][] = item */
-    HashTable *nullable = php_phathom_chart_table(
-        &chart->nullable, 
-        (php_phathom_chart_table_key_t) {
-            .type = PHP_PHATHOM_CHART_TABLE_INDEX,
-            .value = {
-                .index = position,
-            },
-        }, php_phathom_table_destroy);
+    php_phathom_hash_t *nullable = php_phathom_chart_table(
+        chart,
+        &chart->nullable,
+        php_phathom_hash_key_index((uint64_t) position));
 
     nullable = php_phathom_chart_table(
+        chart,
         nullable,
-        (php_phathom_chart_table_key_t) {
-            .type = PHP_PHATHOM_CHART_TABLE_STRING,
-            .value = {
-                .string = item->rule,
-            },
-        },
-        NULL);
+        php_phathom_hash_key_string(item->rule));
 
-    zend_hash_next_index_insert_ptr(nullable, item);
+    php_phathom_hash_append(nullable, item);
 } /* }}} */
 
 /* {{{ waiting */
-static zend_always_inline void php_phathom_chart_waiting(php_phathom_chart_t *chart, zend_long position, zend_string *name, php_phathom_item_t *item) {
+static zend_always_inline void php_phathom_chart_waiting(
+    php_phathom_chart_t *chart, zend_long position, zend_string *name, php_phathom_item_t *item) {
     /* waiting[position][name][] = item; */
-    HashTable *waiting = php_phathom_chart_table(&chart->waiting,
-        (php_phathom_chart_table_key_t) {
-            .type = PHP_PHATHOM_CHART_TABLE_INDEX,
-            .value = {
-                .index = position,
-            },
-        }, php_phathom_table_destroy);
-    waiting = php_phathom_chart_table(waiting,
-        (php_phathom_chart_table_key_t) {
-            .type = PHP_PHATHOM_CHART_TABLE_STRING,
-            .value = {
-                .string = name,
-            },
-        }, NULL);
-    zend_hash_next_index_insert_ptr(waiting, item);
+    php_phathom_hash_t *waiting = php_phathom_chart_table(
+        chart,
+        &chart->waiting,
+        php_phathom_hash_key_index((uint64_t) position));
+
+    waiting = php_phathom_chart_table(
+        chart,
+        waiting,
+        php_phathom_hash_key_string(name));
+    php_phathom_hash_append(waiting, item);
 } /* }}} */
 
 /* {{{ add */
 static zend_always_inline void
     php_phathom_chart_append(
+        php_phathom_chart_t *chart,
         php_phathom_backs_t *backs,
         php_phathom_back_t back) {
     if (backs->used == backs->limit) {
+        php_phathom_back_t *grown;
+
         backs->limit = backs->limit ? backs->limit * 2 : 4;
-        backs->path  = erealloc(
-            backs->path,
+        grown = zend_arena_alloc(
+            &chart->arena,
             sizeof(php_phathom_back_t) * backs->limit);
+        if (backs->used) {
+            memcpy(
+                grown,
+                backs->path,
+                sizeof(php_phathom_back_t) * backs->used);
+        }
+        backs->path = grown;
     }
+
     backs->path[backs->used++] = back;
 }
 
@@ -275,10 +239,8 @@ static void php_phathom_chart_add(
         }
         for (uint64_t b = 0; b < item->backs.used; b++) {
             php_phathom_chart_append(
+                chart,
                 &slot->backs, item->backs.path[b]);
-        }
-        if (item->backs.path) {
-            efree(item->backs.path);
         }
         return;
     }
@@ -288,16 +250,11 @@ static void php_phathom_chart_add(
 
     php_phathom_chart_path(chart, position, slot);
 
-    /* $dotted = $item->alternative->symbols[$item->dot] ?? null */
-    zend_array *symbols =
-        php_phathom_alternative_symbols(
-            slot->alternative);
-    zval *dotted =
-        zend_hash_index_find(
-            symbols, slot->dot);
+    zend_object *dotted =
+        php_phathom_alternative_symbol(
+            slot->alternative, slot->dot);
 
     if (!dotted) {
-        /* dotted === null */
         if (slot->origin == position) {
             php_phathom_chart_nullable(chart, position, slot);
             php_phathom_chart_complete(chart, position, slot);
@@ -306,52 +263,29 @@ static void php_phathom_chart_add(
     }
 
     php_phathom_chart_waiting(chart, position,
-        php_phathom_symbol_name(
-            Z_OBJ_P(Z_UNWRAP_P(dotted))), slot);
-    php_phathom_chart_drain(chart, position,
-        Z_OBJ_P(Z_UNWRAP_P(dotted)), slot);
+        php_phathom_symbol_name(dotted), slot);
+    php_phathom_chart_drain(
+        chart, position, dotted, slot);
 } /* }}} */
 
 /* {{{ drain */
 static void php_phathom_chart_drain(
     php_phathom_chart_t* chart, zend_long position, zend_object *dotted, php_phathom_item_t* item) {
 
-    zend_string *name =
-        php_phathom_symbol_name(dotted);
+    php_phathom_hash_t *nullable =
+        php_phathom_hash_find_index(
+            &chart->nullable, (uint64_t) position);
 
-    HashTable *index =
-        zend_hash_index_find_ptr(
-            &chart->nullable, position);
-    if (!index) {
+    if (!nullable) {
         return;
     }
 
-    HashTable *rule =
-        zend_hash_find_ptr(
-            index, name);
-    if (!rule) {
+    if (!(nullable = php_phathom_hash_find_string(
+            nullable, php_phathom_symbol_name(dotted)))) {
         return;
     }
 
-    zend_long it = 0, end =
-        (zend_long)
-            zend_hash_num_elements(rule);
-    uint32_t iterator =
-        zend_hash_iterator_add(rule, 0);
-
-    while (it++ < end) {
-        HashPosition pos =
-            zend_hash_iterator_pos(iterator, rule);
-        php_phathom_item_t *completed =
-            zend_hash_get_current_data_ptr_ex(rule, &pos);
-
-        if (!completed) {
-            break;
-        }
-
-        zend_hash_move_forward_ex(rule, &pos);
-        EG(ht_iterators)[iterator].pos = pos;
-
+    PHP_PHATHOM_HASH_FOREACH_CURRENT(nullable, php_phathom_item_t, completed) {
         php_phathom_item_t draining = {
             .rule        = item->rule,
             .alt         = item->alt,
@@ -360,7 +294,9 @@ static void php_phathom_chart_drain(
             .backs       = { .path = NULL, .used = 0, .limit = 0 },
             .alternative = item->alternative,
         };
-        php_phathom_back_t *bpath = emalloc(sizeof(php_phathom_back_t));
+        php_phathom_back_t *bpath = zend_arena_alloc(
+            &chart->arena,
+            sizeof(php_phathom_back_t));
         bpath[0] = (php_phathom_back_t){ 
             .prev = item,
             .child = completed,
@@ -372,47 +308,25 @@ static void php_phathom_chart_drain(
             .limit = 1 
         };
         php_phathom_chart_add(chart, position, &draining);
-    }
-    zend_hash_iterator_del(iterator);
+    } PHP_PHATHOM_HASH_FOREACH_END();
 } /* }}} */
 
 /* {{{ complete */
 static void php_phathom_chart_complete(
     php_phathom_chart_t* chart, zend_long position, php_phathom_item_t *item) {
 
-    HashTable *waiting =
-        zend_hash_index_find_ptr(
-            &chart->waiting, item->origin);
+    php_phathom_hash_t *waiting =
+        php_phathom_hash_find_index(
+            &chart->waiting, (uint64_t) item->origin);
     if (!waiting) {
         return;
     }
 
-    HashTable *rule =
-        zend_hash_find_ptr(
-            waiting, item->rule);
-    if (!rule) {
+    if (!(waiting = php_phathom_hash_find_string(waiting, item->rule))) {
         return;
     }
 
-    zend_long it = 0, end  =
-        (zend_long)
-            zend_hash_num_elements(rule);
-    uint32_t  iterator =
-        zend_hash_iterator_add(rule, 0);
-
-    while (it++ < end) {
-        HashPosition pos =
-            zend_hash_iterator_pos(iterator, rule);
-        php_phathom_item_t *complete =
-            zend_hash_get_current_data_ptr_ex(rule, &pos);
-
-        if (!complete) {
-            break;
-        }
-
-        zend_hash_move_forward_ex(rule, &pos);
-        EG(ht_iterators)[iterator].pos = pos;
-
+    PHP_PHATHOM_HASH_FOREACH_CURRENT(waiting, php_phathom_item_t, complete) {
         php_phathom_item_t add = {
             .rule        = complete->rule,
             .alt         = complete->alt,
@@ -425,7 +339,9 @@ static void php_phathom_chart_complete(
             },
             .alternative = complete->alternative,
         };
-        php_phathom_back_t *bpath = emalloc(sizeof(php_phathom_back_t));
+        php_phathom_back_t *bpath = zend_arena_alloc(
+            &chart->arena,
+            sizeof(php_phathom_back_t));
         bpath[0] = (php_phathom_back_t){ 
             .prev = complete,
             .child = item,
@@ -437,8 +353,7 @@ static void php_phathom_chart_complete(
             .limit = 1 
         };
         php_phathom_chart_add(chart, position, &add);
-    }
-    zend_hash_iterator_del(iterator);
+    } PHP_PHATHOM_HASH_FOREACH_END();
 } /* }}} */
 
 /* {{{ predict */
@@ -446,7 +361,7 @@ static void php_phathom_chart_predict(
     php_phathom_chart_t* chart, zend_long position, zend_object *dotted) {
 
     zend_string *name = php_phathom_symbol_name(dotted);
-    zval        *rule = zend_hash_find_deref(chart->grammar.rules, name);
+    zval        *rule = zend_hash_find(chart->grammar.rules, name);
 
     if (!rule) {
         return;
@@ -454,7 +369,7 @@ static void php_phathom_chart_predict(
 
     zend_long    aid;
     zval        *alt;
-    ZEND_HASH_FOREACH_NUM_KEY_VAL(Z_ARRVAL_P(rule), aid, alt) {
+    ZEND_HASH_FOREACH_NUM_KEY_VAL(Z_ARRVAL_P(Z_UNWRAP_P(rule)), aid, alt) {
         ZVAL_DEREF(alt);
         php_phathom_item_t item = {
             .rule        = name,
@@ -466,7 +381,7 @@ static void php_phathom_chart_predict(
                 .used = 0,
                 .limit = 0 
             },
-            .alternative = Z_OBJ_P(alt),
+            .alternative = Z_OBJ_P(Z_UNWRAP_P(alt)),
         };
         if (!php_phathom_chart_indexed(chart, position, &item)) {
             php_phathom_chart_add(chart, position, &item);
@@ -508,34 +423,32 @@ static bool php_phathom_chart_scan(
         (zend_long)
             zend_hash_num_elements(
                 &chart->tokens);
-    /* capture the type of the token that was actually scanned */
-    zend_long token_type = php_phathom_token_type(Z_OBJ(retval));
     zend_hash_next_index_insert(
         &chart->tokens, &retval);
 
     /* ensure path[position+1] exists */
-    php_phathom_chart_table(&chart->path,
-        (php_phathom_chart_table_key_t){
-            .type = PHP_PHATHOM_CHART_TABLE_INDEX,
-            .value = {
-                .index = position + 1,
-            },
-        }, NULL);
+    php_phathom_chart_table(chart,
+        &chart->path,
+        php_phathom_hash_key_index((uint64_t) (position + 1)));
 
-    /* advance items in path[position] whose terminal matches */
-    HashTable *path = zend_hash_index_find_ptr(&chart->path, position);
+    /* advance items in path[position] whose terminal matches scanned token type */
+    php_phathom_hash_t *path =
+        php_phathom_hash_find_index(
+            &chart->path, (uint64_t) position);
+    zend_long type =
+        php_phathom_token_type(Z_OBJ(retval));
+
     if (path) {
-        php_phathom_item_t *item;
-        ZEND_HASH_FOREACH_PTR(path, item) {
-            zend_array *symbols = php_phathom_alternative_symbols(item->alternative);
-            zval       *dotted  = zend_hash_index_find(symbols, item->dot);
+        PHP_PHATHOM_HASH_FOREACH_CURRENT(path, php_phathom_item_t, item) {
+            zend_object *dotted =
+                php_phathom_alternative_symbol(
+                    item->alternative, item->dot);
 
             if (!dotted) {
                 continue;
             }
 
-            zend_long terminal = php_phathom_symbol_terminal(Z_OBJ_P(Z_UNWRAP_P(dotted)));
-            if (terminal != token_type) {
+            if (type != php_phathom_symbol_terminal(dotted)) {
                 continue;
             }
 
@@ -556,7 +469,9 @@ static bool php_phathom_chart_scan(
                 continue;
             }
 
-            php_phathom_back_t *bpath = emalloc(sizeof(php_phathom_back_t));
+            php_phathom_back_t *bpath = zend_arena_alloc(
+                &chart->arena,
+                sizeof(php_phathom_back_t));
             bpath[0] = (php_phathom_back_t){
                 .prev = item,
                 .child = NULL,
@@ -569,7 +484,7 @@ static bool php_phathom_chart_scan(
             };
 
             php_phathom_chart_add(chart, position + 1, &add);
-        } ZEND_HASH_FOREACH_END();
+        } PHP_PHATHOM_HASH_FOREACH_END();
     }
 
     return true;
@@ -611,21 +526,19 @@ static zend_always_inline void php_phathom_chart_construct(php_phathom_t* phatho
     php_phathom_chart_start(phathom, chart);
 
     for (zend_long i = 0; ; i++) {
-        if (!zend_hash_index_find_ptr(&chart->path, i)) break;
+        php_phathom_hash_t *path;
 
-        zend_long j = 0;
+        if (!(path = php_phathom_hash_find_index(&chart->path,  (uint64_t) i))) {
+            break;
+        }
+
         HashTable expected;
         zend_hash_init(&expected, 8, NULL, NULL, 0);
 
-        /* Re-fetch path_i on every step: predict/complete/drain may add new
-           positions to chart->path, causing it to rehash and invalidating
-           any previously obtained pointer. */
-        HashTable *path_i;
-        while ((path_i = zend_hash_index_find_ptr(&chart->path, i)) &&
-               j < (zend_long) zend_hash_num_elements(path_i)) {
-            php_phathom_item_t *item    = zend_hash_index_find_ptr(path_i, j++);
-            zend_array         *symbols = php_phathom_alternative_symbols(item->alternative);
-            zval               *dotted  = zend_hash_index_find(symbols, item->dot);
+        PHP_PHATHOM_HASH_FOREACH_CONCURRENT(path, php_phathom_item_t, item) {
+            zend_object *dotted =
+                php_phathom_alternative_symbol(
+                    item->alternative, item->dot);
 
             if (!dotted) {
                 if (i == item->origin) {
@@ -633,18 +546,17 @@ static zend_always_inline void php_phathom_chart_construct(php_phathom_t* phatho
                 }
                 php_phathom_chart_complete(chart, i, item);
             } else {
-                zend_long  terminal = php_phathom_symbol_terminal(
-                    Z_OBJ_P(Z_UNWRAP_P(dotted)));
+                zend_long  terminal = php_phathom_symbol_terminal(dotted);
                 if (terminal != -1) {
                     zval t;
                     ZVAL_TRUE(&t);
                     zend_hash_index_add(
                         &expected, terminal, &t);
                 } else {
-                    php_phathom_chart_predict(chart, i, Z_OBJ_P(Z_UNWRAP_P(dotted)));
+                    php_phathom_chart_predict(chart, i, dotted);
                 }
             }
-        }
+        } PHP_PHATHOM_HASH_FOREACH_END();
 
         if (!zend_hash_num_elements(&expected)) {
             zend_hash_destroy(&expected);
