@@ -33,7 +33,13 @@ static zend_always_inline void php_phathom_buffer_fetch(php_phathom_t* phathom, 
             BP_VAR_R, NULL, &property);
 
     buffer->contents =
-        Z_STR_P(address);
+        zend_string_copy(
+            Z_STR_P(address));
+
+    if (&property == address) {
+        zval_ptr_dtor(address);
+    }
+
     GC_ADDREF(buffer->object);
 }
 
@@ -41,6 +47,8 @@ static zend_always_inline void php_phathom_buffer_free(php_phathom_buffer_t *buf
     if (UNEXPECTED(!buffer->object)) {
         return;
     }
+
+    zend_string_release(buffer->contents);
 
     OBJ_RELEASE(buffer->object);
 }

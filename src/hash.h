@@ -72,14 +72,13 @@ typedef struct _php_phathom_hash_t {
 
 static zend_always_inline php_phathom_hash_key_t php_phathom_hash_key_string(zend_string *string) {
     ZEND_ASSERT(string);
-    ZEND_ASSERT(ZSTR_IS_INTERNED(string));
 
     return (php_phathom_hash_key_t) {
         .kind  = PHP_PHATHOM_HASH_STRING,
         .value = { 
             .string = string 
         },
-        .hash  = ZSTR_HASH(string),
+        .hash  = zend_string_hash_val(string),
     };
 }
 

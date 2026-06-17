@@ -81,6 +81,8 @@ void php_phathom_chart_free(zend_object* std) {
 
     php_phathom_grammar_free(&chart->grammar);
     php_phathom_buffer_free(&chart->buffer);
+
+    zend_object_std_dtor(std);
 }
 
 /* Forward declarations */
@@ -88,7 +90,7 @@ static void php_phathom_chart_add(php_phathom_chart_t*, zend_long, php_phathom_i
 static void php_phathom_chart_drain(php_phathom_chart_t*, zend_long, zend_object*, php_phathom_item_t*);
 static void php_phathom_chart_complete(php_phathom_chart_t*, zend_long, php_phathom_item_t*);
 static void php_phathom_chart_predict(php_phathom_chart_t*, zend_long, zend_object*);
-static bool php_phathom_chart_scan(php_phathom_chart_t*, zend_long, HashTable*);
+static bool php_phathom_chart_scan(php_phathom_chart_t*, zend_long, zval*);
 
 /* {{{ index */
 static zend_always_inline php_phathom_item_t* php_phathom_chart_index(
@@ -391,16 +393,15 @@ static void php_phathom_chart_predict(
 
 /* {{{ scan */
 static bool php_phathom_chart_scan(
-    php_phathom_chart_t* chart, zend_long position, HashTable *expected) {
+    php_phathom_chart_t* chart, zend_long position, zval *expected) {
     zval args[4], retval;
 
     ZVAL_OBJ(&args[0],  chart->buffer.object);
     ZVAL_LONG(&args[1], chart->position);
-    ZVAL_ARR(&args[2],  expected);
+    ZVAL_COPY(&args[2], expected);
     ZVAL_STR(&args[3],  chart->grammar.token);
 
     ZVAL_NEW_REF(&args[1], &args[1]);
-    GC_ADDREF(expected);
     {
         ZVAL_UNDEF(&retval);
         zend_call_known_function(
@@ -411,10 +412,10 @@ static bool php_phathom_chart_scan(
         chart->position =
             Z_LVAL_P(Z_UNWRAP_P(&args[1]));
     }
-    GC_DELREF(expected);
+    zval_ptr_dtor(&args[2]);
     zval_ptr_dtor(&args[1]);
 
-    if (Z_TYPE(retval) == IS_NULL) {
+    if (Z_TYPE(retval) == IS_NULL || Z_TYPE(retval) == IS_UNDEF) {
         zval_ptr_dtor(&retval);
         return false;
     }
@@ -532,8 +533,8 @@ static zend_always_inline void php_phathom_chart_construct(php_phathom_t* phatho
             break;
         }
 
-        HashTable expected;
-        zend_hash_init(&expected, 8, NULL, NULL, 0);
+        zval expected;
+        array_init(&expected);
 
         PHP_PHATHOM_HASH_FOREACH_CONCURRENT(path, php_phathom_item_t, item) {
             zend_object *dotted =
@@ -548,26 +549,23 @@ static zend_always_inline void php_phathom_chart_construct(php_phathom_t* phatho
             } else {
                 zend_long  terminal = php_phathom_symbol_terminal(dotted);
                 if (terminal != -1) {
-                    zval t;
-                    ZVAL_TRUE(&t);
-                    zend_hash_index_add(
-                        &expected, terminal, &t);
+                    add_index_bool(&expected, terminal, true);
                 } else {
                     php_phathom_chart_predict(chart, i, dotted);
                 }
             }
         } PHP_PHATHOM_HASH_FOREACH_END();
 
-        if (!zend_hash_num_elements(&expected)) {
-            zend_hash_destroy(&expected);
+        if (!zend_hash_num_elements(Z_ARRVAL(expected))) {
+            zval_ptr_dtor(&expected);
             break;
         }
 
         if (!php_phathom_chart_scan(chart, i, &expected)) {
-            zend_hash_destroy(&expected);
+            zval_ptr_dtor(&expected);
             break;
         }
-        zend_hash_destroy(&expected);
+        zval_ptr_dtor(&expected);
     }
 
     {
