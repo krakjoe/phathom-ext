@@ -466,10 +466,6 @@ static bool php_phathom_chart_scan(
                 .alternative = item->alternative,
             };
 
-            if (php_phathom_chart_indexed(chart, position + 1, &add)) {
-                continue;
-            }
-
             php_phathom_back_t *bpath = zend_arena_alloc(
                 &chart->arena,
                 sizeof(php_phathom_back_t));
