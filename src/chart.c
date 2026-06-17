@@ -24,6 +24,7 @@
 #include "grammar.h"
 #include "symbol.h"
 #include "alternative.h"
+#include "token.h"
 
 zend_class_entry* php_phathom_chart_ce = NULL;
 static zend_object_handlers php_phathom_chart_handlers;

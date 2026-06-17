@@ -73,20 +73,4 @@ static zend_always_inline void php_phathom_grammar_free(php_phathom_grammar_t *g
     }
     OBJ_RELEASE(grammar->object);
 }
-/*
- * Token layout (abstract class Token):
- *   public int   $type     [0]
- *   public array $location [1]
- *   public mixed $value    [2]
- */
-static zend_always_inline zend_long php_phathom_token_type(zend_object *obj) {
-    struct __layout__ {
-        zval type;
-        zval location;
-        zval value;
-    };
-    zval *zv = &((struct __layout__*)(char*)(obj->properties_table))->type;
-    zv = Z_ISREF_P(zv) ? &Z_REF_P(zv)->val : zv;
-    return Z_LVAL_P(zv);
-}
 #endif
