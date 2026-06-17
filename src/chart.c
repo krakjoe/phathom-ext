@@ -333,17 +333,24 @@ static void php_phathom_chart_drain(
         return;
     }
 
-    /* Snapshot item pointers before any recursive chart_add calls can
-       add new entries to nullable[position][name], causing arData to be
-       reallocated and invalidating any in-flight FOREACH iterator. */
-    zend_long count = (zend_long) zend_hash_num_elements(rule);
-    php_phathom_item_t **snap = emalloc(count * sizeof(php_phathom_item_t*));
-    zend_long n = 0;
-    php_phathom_item_t *s;
-    ZEND_HASH_FOREACH_PTR(rule, s) { snap[n++] = s; } ZEND_HASH_FOREACH_END();
+    zend_long it = 0, end =
+        (zend_long)
+            zend_hash_num_elements(rule);
+    uint32_t iterator =
+        zend_hash_iterator_add(rule, 0);
 
-    for (zend_long k = 0; k < n; k++) {
-        php_phathom_item_t *completed = snap[k];
+    while (it++ < end) {
+        HashPosition pos =
+            zend_hash_iterator_pos(iterator, rule);
+        php_phathom_item_t *completed =
+            zend_hash_get_current_data_ptr_ex(rule, &pos);
+
+        if (!completed) {
+            break;
+        }
+
+        zend_hash_move_forward_ex(rule, &pos);
+        EG(ht_iterators)[iterator].pos = pos;
 
         php_phathom_item_t draining = {
             .rule        = item->rule,
@@ -366,7 +373,7 @@ static void php_phathom_chart_drain(
         };
         php_phathom_chart_add(chart, position, &draining);
     }
-    efree(snap);
+    zend_hash_iterator_del(iterator);
 } /* }}} */
 
 /* {{{ complete */
@@ -387,17 +394,24 @@ static void php_phathom_chart_complete(
         return;
     }
 
-    /* Snapshot item pointers before any recursive chart_add calls can
-       add new entries to waiting[origin][rule], causing arData to be
-       reallocated and invalidating any in-flight FOREACH iterator. */
-    zend_long count = (zend_long) zend_hash_num_elements(rule);
-    php_phathom_item_t **snap = emalloc(count * sizeof(php_phathom_item_t*));
-    zend_long n = 0;
-    php_phathom_item_t *s;
-    ZEND_HASH_FOREACH_PTR(rule, s) { snap[n++] = s; } ZEND_HASH_FOREACH_END();
-    
-    for (zend_long k = 0; k < n; k++) {
-        php_phathom_item_t *complete = snap[k];
+    zend_long it = 0, end  =
+        (zend_long)
+            zend_hash_num_elements(rule);
+    uint32_t  iterator =
+        zend_hash_iterator_add(rule, 0);
+
+    while (it++ < end) {
+        HashPosition pos =
+            zend_hash_iterator_pos(iterator, rule);
+        php_phathom_item_t *complete =
+            zend_hash_get_current_data_ptr_ex(rule, &pos);
+
+        if (!complete) {
+            break;
+        }
+
+        zend_hash_move_forward_ex(rule, &pos);
+        EG(ht_iterators)[iterator].pos = pos;
 
         php_phathom_item_t add = {
             .rule        = complete->rule,
@@ -424,7 +438,7 @@ static void php_phathom_chart_complete(
         };
         php_phathom_chart_add(chart, position, &add);
     }
-    efree(snap);
+    zend_hash_iterator_del(iterator);
 } /* }}} */
 
 /* {{{ predict */

@@ -1,7 +1,7 @@
 phathom-test-coverage-phpunit:
 	ZEND_DONT_UNLOAD_MODULES=1 $(TEST_PHP_EXECUTABLE) \
 		-dextension=$(top_builddir)/modules/phathom.so \
-	../vendor/bin/phpunit -c ../phpunit.xml
+	../vendor/bin/phpunit -c ../phpunit.xml $(PHPUNIT_ARGS)
 
 phathom-test-coverage-lcov: phathom-test-coverage-phpunit
 	lcov -c \
