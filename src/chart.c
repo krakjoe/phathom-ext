@@ -134,22 +134,6 @@ static zend_always_inline php_phathom_item_t* php_phathom_chart_index(
             &key, sizeof(key)),
         slot);
     return slot;
-}
-
-/* Returns true if (position, rule, alt, dot, origin) is already in the index.
-   Callers use this to skip bpath allocation before calling chart_add. */
-static zend_always_inline bool php_phathom_chart_indexed(
-    php_phathom_chart_t *chart, zend_long position, php_phathom_item_t *item) {
-    php_phathom_chart_index_key_t key = {
-        .position = (uint64_t) position,
-        .rule     = (uint64_t)(uintptr_t) item->rule,
-        .alt      = (uint64_t) item->alt,
-        .dot      = (uint64_t) item->dot,
-        .origin   = (uint64_t) item->origin,
-    };
-    /* index[{position, rule, alt, dot, origin}] */
-    return NULL != php_phathom_hash_find_binary(
-        &chart->index, &key, sizeof(key));
 } /* }}}*/
 
 /* {{{ path */
@@ -380,7 +364,6 @@ static void php_phathom_chart_predict(
     zend_long    aid;
     zval        *alt;
     ZEND_HASH_FOREACH_NUM_KEY_VAL(Z_ARRVAL_P(Z_UNWRAP_P(rule)), aid, alt) {
-        ZVAL_DEREF(alt);
         php_phathom_item_t item = {
             .rule        = name,
             .alt         = aid,
@@ -393,9 +376,7 @@ static void php_phathom_chart_predict(
             },
             .alternative = Z_OBJ_P(Z_UNWRAP_P(alt)),
         };
-        if (!php_phathom_chart_indexed(chart, position, &item)) {
-            php_phathom_chart_add(chart, position, &item);
-        }
+        php_phathom_chart_add(chart, position, &item);
     } ZEND_HASH_FOREACH_END();
 } /* }}} */
 
