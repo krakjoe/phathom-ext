@@ -83,7 +83,7 @@ static php_phathom_back_t* php_phathom_evaluator_select(
     php_phathom_evaluator_t *eval,
     php_phathom_backs_t     *backs)
 {
-    php_phathom_back_t *selected    = &backs->path[0];
+    php_phathom_back_t *selected    = php_phathom_chart_back_fetch(backs, 0);
     zend_long           prioritized = php_phathom_evaluator_priority(selected);
 
     if (prioritized == ZEND_LONG_MIN) {
@@ -98,9 +98,12 @@ static php_phathom_back_t* php_phathom_evaluator_select(
     }
 
     for (uint64_t b = 1; b < backs->used; b++) {
-        zend_long priority = php_phathom_evaluator_priority(&backs->path[b]);
+        php_phathom_back_t *back =
+            php_phathom_chart_back_fetch(backs, b);
+        zend_long priority =
+            php_phathom_evaluator_priority(back);
         if (priority > prioritized) {
-            selected    = &backs->path[b];
+            selected    = back;
             prioritized = priority;
         }
     }

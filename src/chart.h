@@ -28,17 +28,20 @@ extern zend_class_entry* php_phathom_chart_ce;
 typedef struct _php_phathom_item_t php_phathom_item_t;
 typedef struct _php_phathom_back_t php_phathom_back_t;
 
-typedef struct _php_phathom_backs_t {
-    php_phathom_back_t *path;
-    uint64_t            used;
-    uint64_t            limit;
-} php_phathom_backs_t;
-
 struct _php_phathom_back_t {
     php_phathom_item_t *prev;
     php_phathom_item_t *child;
     zend_long           token;
 };
+
+typedef struct _php_phathom_backs_t {
+    uint64_t           used;
+    uint64_t           limit;
+    union {
+        php_phathom_back_t  one;   /* limit <= 1: inline */
+        php_phathom_back_t *many;  /* limit >  1: arena  */
+    };
+} php_phathom_backs_t;
 
 struct _php_phathom_item_t {
     zend_long           pos;
@@ -73,6 +76,14 @@ typedef struct _php_phathom_chart_t {
 
 static zend_always_inline php_phathom_chart_t* php_phathom_chart_fetch(zend_object* std) {
     return (php_phathom_chart_t*) (((char*) std) - XtOffsetOf(php_phathom_chart_t, std));
+}
+
+static zend_always_inline php_phathom_back_t*
+    php_phathom_chart_back_fetch(
+        php_phathom_backs_t *backs, uint64_t index) {
+    return backs->limit > 1 ?
+        &backs->many[index] :
+        &backs->one;
 }
 
 PHP_MINIT_FUNCTION(PHATHOM_CHART);

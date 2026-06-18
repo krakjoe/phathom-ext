@@ -197,24 +197,32 @@ static zend_always_inline void
     php_phathom_chart_append(
         php_phathom_chart_t *chart,
         php_phathom_backs_t *backs,
-        php_phathom_back_t back) {
+        php_phathom_back_t  *back) {
+    if (backs->limit == 0) {
+        /* initial slot unused */
+        backs->limit = 1;
+        backs->one   = *back;
+        backs->used  = 1;
+        return;
+    }
     if (backs->used == backs->limit) {
-        php_phathom_back_t *grown;
-
-        backs->limit = backs->limit ? backs->limit * 2 : 4;
-        grown = zend_arena_alloc(
+        /* at limit (re)allocate */
+        uint64_t limit =
+            backs->limit > 1 ?
+                backs->limit * 2 : /* double slots */
+                4; /* initially allocate 4 slots */
+        php_phathom_back_t *grown = zend_arena_alloc(
             &chart->arena,
-            sizeof(php_phathom_back_t) * backs->limit);
+            sizeof(php_phathom_back_t) * limit);
         if (backs->used) {
-            memcpy(
-                grown,
-                backs->path,
+            memcpy(grown,
+                php_phathom_chart_back_fetch(backs, 0),
                 sizeof(php_phathom_back_t) * backs->used);
         }
-        backs->path = grown;
+        backs->many  = grown;
+        backs->limit = limit;
     }
-
-    backs->path[backs->used++] = back;
+    backs->many[backs->used++] = *back;
 }
 
 static void php_phathom_chart_add(
@@ -230,7 +238,9 @@ static void php_phathom_chart_add(
         for (uint64_t b = 0; b < item->backs.used; b++) {
             php_phathom_chart_append(
                 chart,
-                &slot->backs, item->backs.path[b]);
+                &slot->backs,
+                php_phathom_chart_back_fetch(
+                    &item->backs, b));
         }
         return;
     }
@@ -283,21 +293,16 @@ static void php_phathom_chart_drain(
             .alt         = item->alt,
             .dot         = item->dot + 1,
             .origin      = item->origin,
-            .backs       = { .path = NULL, .used = 0, .limit = 0 },
+            .backs       = { 
+                .used  = 1,
+                .limit = 1,
+                .one = {
+                    .prev = item,
+                    .child = completed,
+                    .token = -1,
+                },
+            },
             .alternative = item->alternative,
-        };
-        php_phathom_back_t *bpath = zend_arena_alloc(
-            &chart->arena,
-            sizeof(php_phathom_back_t));
-        bpath[0] = (php_phathom_back_t){ 
-            .prev = item,
-            .child = completed,
-            .token = -1 
-        };
-        draining.backs = (php_phathom_backs_t){ 
-            .path = bpath,
-            .used = 1,
-            .limit = 1 
         };
         php_phathom_chart_add(chart, position, &draining);
     } PHP_PHATHOM_HASH_FOREACH_END();
@@ -327,24 +332,15 @@ static void php_phathom_chart_complete(
             .dot         = complete->dot + 1,
             .origin      = complete->origin,
             .backs       = { 
-                .path = NULL,
-                .used = 0,
-                .limit = 0 
+                .used  = 1,
+                .limit = 1,
+                .one = {
+                    .prev = complete,
+                    .child = item,
+                    .token = -1,
+                },
             },
             .alternative = complete->alternative,
-        };
-        php_phathom_back_t *bpath = zend_arena_alloc(
-            &chart->arena,
-            sizeof(php_phathom_back_t));
-        bpath[0] = (php_phathom_back_t){ 
-            .prev = complete,
-            .child = item,
-            .token = -1 
-        };
-        add.backs = (php_phathom_backs_t){ 
-            .path = bpath,
-            .used = 1,
-            .limit = 1 
         };
         php_phathom_chart_add(chart, position, &add);
     } PHP_PHATHOM_HASH_FOREACH_END();
@@ -369,11 +365,7 @@ static void php_phathom_chart_predict(
             .alt         = aid,
             .dot         = 0,
             .origin      = position,
-            .backs       = { 
-                .path = NULL,
-                .used = 0,
-                .limit = 0 
-            },
+            .backs       = { 0 },
             .alternative = Z_OBJ_P(Z_UNWRAP_P(alt)),
         };
         php_phathom_chart_add(chart, position, &item);
@@ -447,28 +439,17 @@ static bool php_phathom_chart_scan(
                 .alt         = item->alt,
                 .dot         = item->dot + 1,
                 .origin      = item->origin,
-                .backs       = { 
-                    .path = NULL,
-                    .used = 0,
-                    .limit = 0 
+                .backs       = {
+                    .used  = 1,
+                    .limit = 1,
+                    .one = {
+                        .prev = item,
+                        .child = NULL,
+                        .token = ti,
+                    },
                 },
                 .alternative = item->alternative,
             };
-
-            php_phathom_back_t *bpath = zend_arena_alloc(
-                &chart->arena,
-                sizeof(php_phathom_back_t));
-            bpath[0] = (php_phathom_back_t){
-                .prev = item,
-                .child = NULL,
-                .token = ti 
-            };
-            add.backs = (php_phathom_backs_t){ 
-                .path = bpath,
-                .used = 1,
-                .limit = 1 
-            };
-
             php_phathom_chart_add(chart, position + 1, &add);
         } PHP_PHATHOM_HASH_FOREACH_END();
     }
@@ -492,11 +473,7 @@ static zend_always_inline void php_phathom_chart_start(php_phathom_t* phathom, p
             .dot         = 0,
             .origin      = 0,
             .pos         = 0,
-            .backs       = { 
-                .path = NULL,
-                .used = 0,
-                .limit = 0 
-            },
+            .backs       = { 0 },
             .rule        = chart->grammar.start,
             .alternative = Z_OBJ_P(Z_UNWRAP_P(alt)),
         };
