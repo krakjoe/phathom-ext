@@ -24,6 +24,7 @@
 typedef enum _php_phathom_hash_kind_t {
     PHP_PHATHOM_HASH_STRING,
     PHP_PHATHOM_HASH_INDEX,
+    PHP_PHATHOM_HASH_BINARY,
 } php_phathom_hash_kind_t;
 
 typedef struct _php_phathom_hash_key_t {
@@ -31,6 +32,10 @@ typedef struct _php_phathom_hash_key_t {
     union {
         zend_string *string;
         uint64_t     index;
+        struct {
+            void  *mem;
+            size_t size;
+        } binary;
     } value;
     zend_ulong hash;
 } php_phathom_hash_key_t;
@@ -94,6 +99,21 @@ static zend_always_inline php_phathom_hash_key_t php_phathom_hash_key_index(uint
     };
 }
 
+static zend_always_inline php_phathom_hash_key_t php_phathom_hash_key_binary(void *mem, size_t size) {
+    return (php_phathom_hash_key_t) {
+        .kind  = PHP_PHATHOM_HASH_BINARY,
+        .value = {
+            .binary = {
+                .mem  = mem,
+                .size = size,
+            },
+        },
+        /* | 1 keeps non-zero without a branch */
+        .hash  = zend_hash_func(
+            (const char*) mem, size) | 1,
+    };
+}
+
 /* ---- internal helpers -------------------------------------------------- */
 
 static zend_always_inline uint32_t php_phathom_hash_roundup(uint32_t size) {
@@ -106,13 +126,39 @@ static zend_always_inline uint32_t php_phathom_hash_roundup(uint32_t size) {
     return result;
 }
 
+static zend_always_inline php_phathom_hash_key_t php_phathom_hash_key_intern(
+    php_phathom_hash_t *hash, php_phathom_hash_key_t key) {
+    if (key.kind == PHP_PHATHOM_HASH_BINARY) {
+        void *mem = zend_arena_alloc(
+            hash->arena, key.value.binary.size);
+        memcpy(mem,
+            key.value.binary.mem,
+            key.value.binary.size);
+        key.value.binary.mem = mem;
+    }
+    return key;
+}
+
 static zend_always_inline bool php_phathom_hash_key_equals(
     php_phathom_hash_key_t left, php_phathom_hash_key_t right) {
     if (left.kind != right.kind) {
         return false;
     }
 
-    if (UNEXPECTED(left.kind == PHP_PHATHOM_HASH_STRING)) {
+    if (EXPECTED(left.kind == PHP_PHATHOM_HASH_BINARY)) {
+        if (UNEXPECTED(
+                left.value.binary.size !=
+                right.value.binary.size)) {
+            return false;
+        }
+
+        return 0 == memcmp(
+            left.value.binary.mem,
+            right.value.binary.mem,
+            left.value.binary.size);
+    }
+
+    if (left.kind == PHP_PHATHOM_HASH_STRING) {
         if (left.value.string != right.value.string) {
             return zend_string_equals(
                 left.value.string,
@@ -265,6 +311,13 @@ static zend_always_inline void* php_phathom_hash_find_string(
         php_phathom_hash_key_string(string));
 }
 
+static zend_always_inline void* php_phathom_hash_find_binary(
+    php_phathom_hash_t *hash, void *mem, size_t size) {
+    return php_phathom_hash_find(
+        hash,
+        php_phathom_hash_key_binary(mem, size));
+}
+
 static zend_always_inline bool php_phathom_hash_add(
     php_phathom_hash_t *hash, php_phathom_hash_key_t key, void *value) {
     bool found;
@@ -288,7 +341,8 @@ static zend_always_inline bool php_phathom_hash_add(
     uint32_t slot =
         ++hash->entries.used;
 
-    hash->entries.data[slot].key   = key;
+    hash->entries.data[slot].key =
+        php_phathom_hash_key_intern(hash, key);
     hash->entries.data[slot].value = value;
     hash->buckets.used++;
 
@@ -325,7 +379,8 @@ static zend_always_inline void *php_phathom_hash_update(
     uint32_t slot =
         ++hash->entries.used;
 
-    hash->entries.data[slot].key   = key;
+    hash->entries.data[slot].key =
+        php_phathom_hash_key_intern(hash, key);
     hash->entries.data[slot].value = value;
     hash->buckets.used++;
 
