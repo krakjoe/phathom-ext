@@ -74,6 +74,26 @@ static zend_always_inline zend_long php_phathom_evaluator_priority(
 }
 
 /* =========================================================================
+ * resolve(Item $a, Item $b) : Item
+ *   Mirrors Evaluator::resolve().
+ * ======================================================================= */
+
+static zend_always_inline php_phathom_item_t* php_phathom_evaluator_resolve(
+    php_phathom_t      *phathom,
+    php_phathom_item_t *a,
+    php_phathom_item_t *b)
+{
+    zend_object *assoc =
+        php_phathom_alternative_associativity(a->alternative);
+
+    if (assoc == phathom->enumerated.associativity.left) {
+        return a->origin >= b->origin ? a : b;
+    }
+
+    return a->origin <= b->origin ? a : b;
+}
+
+/* =========================================================================
  * Evaluator::select(array $backs, array $tokens) : Back
  *   Mirrors Evaluator::select().  Returns NULL and throws on ambiguity.
  * ======================================================================= */
@@ -83,18 +103,21 @@ static php_phathom_back_t* php_phathom_evaluator_select(
     php_phathom_evaluator_t *eval,
     php_phathom_backs_t     *backs)
 {
-    php_phathom_back_t *selected    = php_phathom_chart_back_fetch(backs, 0);
-    zend_long           prioritized = php_phathom_evaluator_priority(selected);
+    php_phathom_back_t *selected_back = php_phathom_chart_back_fetch(backs, 0);
+    php_phathom_item_t *selected      = selected_back->child;
+    zend_long           prioritized   = php_phathom_evaluator_priority(selected_back);
 
     if (prioritized == ZEND_LONG_MIN) {
         /* priority() === false */
         if (backs->used > 1) {
-            php_phathom_item_t *child = selected->child;
             php_phathom_exception_ambiguity_range(
-                phathom, eval, child->rule, child->origin, child->pos - 1);
+                phathom, eval,
+                selected->rule,
+                selected->origin,
+                selected->pos - 1);
             return NULL;
         }
-        return selected;
+        return selected_back;
     }
 
     for (uint64_t b = 1; b < backs->used; b++) {
@@ -103,11 +126,24 @@ static php_phathom_back_t* php_phathom_evaluator_select(
         zend_long priority =
             php_phathom_evaluator_priority(back);
         if (priority > prioritized) {
-            selected    = back;
+            selected    = back->child;
             prioritized = priority;
+        } else if (priority == prioritized) {
+            selected = php_phathom_evaluator_resolve(
+                phathom, selected, back->child);
         }
     }
-    return selected;
+
+    /* Find the Back whose child is the winning item. */
+    for (uint64_t b = 0; b < backs->used; b++) {
+        php_phathom_back_t *back =
+            php_phathom_chart_back_fetch(backs, b);
+        if (back->child == selected) {
+            return back;
+        }
+    }
+
+    return selected_back; /* unreachable */
 }
 
 /* =========================================================================
@@ -462,6 +498,8 @@ PHP_METHOD(Evaluator, __invoke) {
         } else if (priority > best_priority) {
             best_item     = nitem;
             best_priority = priority;
+        } else if (priority == best_priority) {
+            best_item = php_phathom_evaluator_resolve(&phathom, best_item, nitem);
         }
     } PHP_PHATHOM_HASH_FOREACH_END();
 

@@ -53,6 +53,11 @@ typedef struct _php_phathom_t {
             zend_object* star;
             zend_object* optional;
         } quantifier;
+        struct {
+            zend_object* none;
+            zend_object* left;
+            zend_object* right;
+        } associativity;
     } enumerated;
     struct {
         zend_string *scan;

@@ -27,17 +27,24 @@ typedef enum _php_phathom_hash_kind_t {
     PHP_PHATHOM_HASH_BINARY,
 } php_phathom_hash_kind_t;
 
+typedef union _php_phathom_hash_key_value_t {
+    zend_string *string;
+    uint64_t     index;
+    struct {
+        void  *mem;
+        size_t size;
+    } binary;
+} php_phathom_hash_key_value_t;
+
+typedef zend_ulong
+    (*php_phathom_hash_key_f)(
+        php_phathom_hash_key_value_t value);
+
 typedef struct _php_phathom_hash_key_t {
-    php_phathom_hash_kind_t kind;
-    union {
-        zend_string *string;
-        uint64_t     index;
-        struct {
-            void  *mem;
-            size_t size;
-        } binary;
-    } value;
-    zend_ulong hash;
+    php_phathom_hash_kind_t      kind;
+    php_phathom_hash_key_value_t value;
+    php_phathom_hash_key_f       func;
+    zend_ulong                   hash;
 } php_phathom_hash_key_t;
 
 /* insertion-ordered entry; stored in entries[] */
@@ -75,6 +82,10 @@ typedef struct _php_phathom_hash_t {
 
 /* ---- key constructors -------------------------------------------------- */
 
+static zend_ulong php_phathom_hash_key_string_f(php_phathom_hash_key_value_t value) {
+    return zend_string_hash_func(value.string);
+}
+
 static zend_always_inline php_phathom_hash_key_t php_phathom_hash_key_string(zend_string *string) {
     ZEND_ASSERT(string);
 
@@ -83,8 +94,21 @@ static zend_always_inline php_phathom_hash_key_t php_phathom_hash_key_string(zen
         .value = { 
             .string = string 
         },
-        .hash  = zend_string_hash_val(string),
+        .func  = php_phathom_hash_key_string_f,
+        .hash  = 0,
     };
+}
+
+static zend_ulong php_phathom_hash_key_index_f(php_phathom_hash_key_value_t value) {
+    uint64_t h = value.index;
+
+    h ^= h >> 33;
+    h *= 0xff51afd7ed558ccdULL;
+    h ^= h >> 33;
+    h *= 0xc4ceb9fe1a85ec53ULL;
+    h ^= h >> 33;
+
+    return (zend_ulong) (h | 1);
 }
 
 static zend_always_inline php_phathom_hash_key_t php_phathom_hash_key_index(uint64_t index) {
@@ -93,10 +117,32 @@ static zend_always_inline php_phathom_hash_key_t php_phathom_hash_key_index(uint
         .value = { 
             .index = index 
         },
-        /* | 1 keeps non-zero without a branch */
-        .hash  = zend_hash_func(
-            (const char*) &index, sizeof(index)) | 1,
+        .func  = php_phathom_hash_key_index_f,
+        .hash  = 0,
     };
+}
+
+static zend_ulong php_phathom_hash_key_binary_f(php_phathom_hash_key_value_t value) {
+    ZEND_ASSERT(value.binary.mem);
+
+    const uint64_t *words = (const uint64_t *) value.binary.mem;
+    size_t          nw    = value.binary.size / sizeof(uint64_t);
+    size_t          tail  = value.binary.size % sizeof(uint64_t);
+    uint64_t        h     = 0xcbf29ce484222325ULL;
+
+    for (size_t i = 0; i < nw; i++) {
+        h ^= words[i];
+        h *= 0x00000100000001b3ULL;
+    }
+
+    if (tail) {
+        uint64_t last = 0;
+        memcpy(&last, (const char *) value.binary.mem + nw * sizeof(uint64_t), tail);
+        h ^= last;
+        h *= 0x00000100000001b3ULL;
+    }
+
+    return (zend_ulong) h;
 }
 
 static zend_always_inline php_phathom_hash_key_t php_phathom_hash_key_binary(void *mem, size_t size) {
@@ -108,10 +154,17 @@ static zend_always_inline php_phathom_hash_key_t php_phathom_hash_key_binary(voi
                 .size = size,
             },
         },
-        /* | 1 keeps non-zero without a branch */
-        .hash  = zend_hash_func(
-            (const char*) mem, size) | 1,
+        .func  = php_phathom_hash_key_binary_f,
+        .hash  = 0,
     };
+}
+
+static zend_always_inline void php_phathom_hash_key(php_phathom_hash_key_t *key) {
+    if (EXPECTED(key->hash)) {
+        return;
+    }
+
+    key->hash = key->func(key->value) | 1;
 }
 
 /* ---- internal helpers -------------------------------------------------- */
@@ -128,6 +181,9 @@ static zend_always_inline uint32_t php_phathom_hash_roundup(uint32_t size) {
 
 static zend_always_inline php_phathom_hash_key_t php_phathom_hash_key_intern(
     php_phathom_hash_t *hash, php_phathom_hash_key_t key) {
+
+    php_phathom_hash_key(&key);
+
     if (key.kind == PHP_PHATHOM_HASH_BINARY) {
         void *mem = zend_arena_alloc(
             hash->arena, key.value.binary.size);
@@ -136,6 +192,7 @@ static zend_always_inline php_phathom_hash_key_t php_phathom_hash_key_intern(
             key.value.binary.size);
         key.value.binary.mem = mem;
     }
+
     return key;
 }
 
@@ -190,7 +247,12 @@ static zend_always_inline php_phathom_hash_entry_t *php_phathom_hash_entries_all
 
 static zend_always_inline php_phathom_hash_bucket_t *php_phathom_hash_bucket_select(
     php_phathom_hash_t *hash, php_phathom_hash_key_t key, bool *found) {
-    uint32_t offset = (uint32_t) (key.hash & hash->buckets.mask);
+
+    php_phathom_hash_key(&key);
+
+    uint32_t offset =
+        (uint32_t)
+            (key.hash & hash->buckets.mask);
 
     for (;;) {
         php_phathom_hash_bucket_t *bucket =
@@ -297,6 +359,33 @@ static zend_always_inline void *php_phathom_hash_find(
     return found ? hash->entries.data[*bucket].value : NULL;
 }
 
+static zend_always_inline void **php_phathom_hash_slot(
+    php_phathom_hash_t *hash, php_phathom_hash_key_t key, bool *inserted) {
+
+    if (UNEXPECTED(hash->buckets.used >= hash->buckets.limit) ||
+        UNEXPECTED(hash->entries.used >= hash->entries.size)) {
+        php_phathom_hash_extend(hash);
+    }
+
+    bool found;
+    php_phathom_hash_bucket_t *bucket =
+        php_phathom_hash_bucket_select(hash, key, &found);
+
+    if (found) {
+        *inserted = false;
+        return &hash->entries.data[*bucket].value;
+    }
+
+    *inserted = true;
+    uint32_t slot = ++hash->entries.used;
+    hash->entries.data[slot].key =
+        php_phathom_hash_key_intern(hash, key);
+    hash->entries.data[slot].value = NULL;
+    hash->buckets.used++;
+    *bucket = slot;
+    return &hash->entries.data[slot].value;
+}
+
 static zend_always_inline void* php_phathom_hash_find_index(
     php_phathom_hash_t *hash, uint64_t index) {
     return php_phathom_hash_find(
@@ -318,84 +407,16 @@ static zend_always_inline void* php_phathom_hash_find_binary(
         php_phathom_hash_key_binary(mem, size));
 }
 
-static zend_always_inline bool php_phathom_hash_add(
-    php_phathom_hash_t *hash, php_phathom_hash_key_t key, void *value) {
-    bool found;
-    php_phathom_hash_bucket_t *bucket;
-
-    ZEND_ASSERT(value);
-
-    bucket = php_phathom_hash_bucket_select(hash, key, &found);
-    if (found) {
-        return false;
-    }
-
-    php_phathom_hash_extend(hash);
-
-    bucket =
-        php_phathom_hash_bucket_select(
-            hash, key, &found);
-
-    ZEND_ASSERT(!found);
-
-    uint32_t slot =
-        ++hash->entries.used;
-
-    hash->entries.data[slot].key =
-        php_phathom_hash_key_intern(hash, key);
-    hash->entries.data[slot].value = value;
-    hash->buckets.used++;
-
-    *bucket = slot;
-
-    return true;
-}
-
-static zend_always_inline void *php_phathom_hash_update(
-    php_phathom_hash_t *hash, php_phathom_hash_key_t key, void *value) {
-    bool found;
-    php_phathom_hash_bucket_t *bucket;
-    void *previous;
-
-    ZEND_ASSERT(value);
-
-    bucket = php_phathom_hash_bucket_select(hash, key, &found);
-    previous =
-        found ?
-            hash->entries.data[*bucket].value : NULL;
-
-    if (found) {
-        hash->entries.data[*bucket].value = value;
-        return previous;
-    }
-
-    php_phathom_hash_extend(hash);
-
-    bucket =
-        php_phathom_hash_bucket_select(
-            hash, key, &found);
-    ZEND_ASSERT(!found);
-
-    uint32_t slot =
-        ++hash->entries.used;
-
-    hash->entries.data[slot].key =
-        php_phathom_hash_key_intern(hash, key);
-    hash->entries.data[slot].value = value;
-    hash->buckets.used++;
-
-    *bucket = slot;
-
-    return previous;
-}
-
 static zend_always_inline void php_phathom_hash_append(
     php_phathom_hash_t *hash, void *data) {
-    php_phathom_hash_add(
+    bool inserted;
+    void **slot = php_phathom_hash_slot(
         hash,
         php_phathom_hash_key_index(
             (uint64_t) hash->entries.used),
-        data);
+        &inserted);
+    ZEND_ASSERT(inserted);
+    *slot = data;
 }
 
 /* ---- iteration macros -------------------------------------------------- */

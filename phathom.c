@@ -78,6 +78,9 @@ php_phathom_class_decl(
 	php_phathom_grammar_quantifier,
 	"\\pharos\\phathom\\Grammar\\Quantifier");
 php_phathom_class_decl(
+	php_phathom_grammar_associativity,
+	"\\pharos\\phathom\\Grammar\\Associativity");
+php_phathom_class_decl(
 	php_phathom_exception_ambiguity,
 	"\\pharos\\phathom\\Exception\\Ambiguity");
 php_phathom_method_decl(
@@ -93,6 +96,10 @@ php_phathom_enum_decl(php_phathom_grammar_quantifier, NONE);
 php_phathom_enum_decl(php_phathom_grammar_quantifier, STAR);
 php_phathom_enum_decl(php_phathom_grammar_quantifier, PLUS);
 php_phathom_enum_decl(php_phathom_grammar_quantifier, OPTIONAL);
+
+php_phathom_enum_decl(php_phathom_grammar_associativity, NONE);
+php_phathom_enum_decl(php_phathom_grammar_associativity, LEFT);
+php_phathom_enum_decl(php_phathom_grammar_associativity, RIGHT);
 
 php_phathom_word_decl(scan);
 php_phathom_word_decl(contents);
@@ -131,7 +138,8 @@ php_phathom_t php_phathom_fetch(void) {
 		php_phathom_fetch_class(php_phathom_grammar);
 		php_phathom_fetch_class(php_phathom_buffer);
 		php_phathom_fetch_class(php_phathom_context);
-        php_phathom_fetch_class(php_phathom_grammar_quantifier);
+		php_phathom_fetch_class(php_phathom_grammar_quantifier);
+		php_phathom_fetch_class(php_phathom_grammar_associativity);
 		php_phathom_fetch_class(php_phathom_exception_ambiguity);
 		php_phathom_fetch_class(php_phathom_exception_execute);
 
@@ -142,6 +150,10 @@ php_phathom_t php_phathom_fetch(void) {
 		php_phathom_fetch_enum(php_phathom_grammar_quantifier, PLUS);
 		php_phathom_fetch_enum(php_phathom_grammar_quantifier, STAR);
 		php_phathom_fetch_enum(php_phathom_grammar_quantifier, OPTIONAL);
+
+		php_phathom_fetch_enum(php_phathom_grammar_associativity, NONE);
+		php_phathom_fetch_enum(php_phathom_grammar_associativity, LEFT);
+		php_phathom_fetch_enum(php_phathom_grammar_associativity, RIGHT);
 
 		php_phathom_ready = true;
     }
@@ -161,6 +173,11 @@ php_phathom_t php_phathom_fetch(void) {
 				.plus     = php_phathom_enum(php_phathom_grammar_quantifier, PLUS),
 				.star     = php_phathom_enum(php_phathom_grammar_quantifier, STAR),
 				.optional = php_phathom_enum(php_phathom_grammar_quantifier, OPTIONAL),
+			},
+			.associativity = {
+				.none  = php_phathom_enum(php_phathom_grammar_associativity, NONE),
+				.left  = php_phathom_enum(php_phathom_grammar_associativity, LEFT),
+				.right = php_phathom_enum(php_phathom_grammar_associativity, RIGHT),
 			},
 		},
 		.exception       = {
@@ -201,6 +218,7 @@ static PHP_MINIT_FUNCTION(phathom)
 	php_phathom_class_minit(php_phathom_context);
 
 	php_phathom_class_minit(php_phathom_grammar_quantifier);
+	php_phathom_class_minit(php_phathom_grammar_associativity);
 	php_phathom_class_minit(php_phathom_exception_ambiguity);
 	php_phathom_class_minit(php_phathom_exception_execute);
 	
@@ -238,6 +256,7 @@ static PHP_MSHUTDOWN_FUNCTION(phathom)
 	php_phathom_class_mshutdown(php_phathom_context);
 
 	php_phathom_class_mshutdown(php_phathom_grammar_quantifier);
+	php_phathom_class_mshutdown(php_phathom_grammar_associativity);
 	php_phathom_class_mshutdown(php_phathom_exception_ambiguity);
 	php_phathom_class_mshutdown(php_phathom_exception_execute);
 

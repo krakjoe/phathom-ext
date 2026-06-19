@@ -22,16 +22,20 @@
 
 /*
  * Alternative layout:
- *   public File       $file      [0]
- *   public array      $symbols   [1]
- *   public int|false  $priority  [2]
- *   public ?string    $action    [3]
- *   public Quantifier $synthetic [4]
+ *   public int|false     $priority      [0]
+ *   public Associativity $associativity [1]
+ *   public File          $file          [2]
+ *   public array         $symbols       [3]
+ *   public array         $annotations   [4]
+ *   public ?string       $action        [5]
+ *   public Quantifier    $synthetic     [6]
  */
 typedef struct php_phathom_alternative_t {
+    zval priority;
+    zval associativity;
     zval file;
     zval symbols;
-    zval priority;
+    zval annotations;
     zval action;
     zval synthetic;
 } php_phathom_alternative_t;
@@ -73,6 +77,13 @@ static zend_always_inline bool php_phathom_alternative_action(zend_object *obj) 
 static zend_always_inline zend_object* php_phathom_alternative_synthetic(zend_object *obj) {
     zval *member = php_phathom_fetch_member(
         obj, php_phathom_alternative_t, synthetic);
+    return Z_OBJ_P(member);
+}
+
+/* Returns the Associativity enum-case object for the associativity field. */
+static zend_always_inline zend_object* php_phathom_alternative_associativity(zend_object *obj) {
+    zval *member = php_phathom_fetch_member(
+        obj, php_phathom_alternative_t, associativity);
     return Z_OBJ_P(member);
 }
 #endif

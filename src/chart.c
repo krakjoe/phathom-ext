@@ -38,20 +38,18 @@ static bool php_phathom_chart_scan(php_phathom_chart_t*, zend_long, zval*); /* }
 
 /* {{{ table */
 static zend_always_inline php_phathom_hash_t *php_phathom_chart_table(
-    php_phathom_chart_t *chart, php_phathom_hash_t *root, php_phathom_hash_key_t key) {
-    php_phathom_hash_t *table =
-        php_phathom_hash_find(
-            root, key);
+    php_phathom_chart_t *chart, php_phathom_hash_t *root, php_phathom_hash_key_t key, uint32_t size) {
+    bool inserted;
+    php_phathom_hash_t **slot = (php_phathom_hash_t **)
+        php_phathom_hash_slot(root, key, &inserted);
 
-    if (EXPECTED(table)) {
-        return table;
+    if (EXPECTED(!inserted)) {
+        return *slot;
     }
 
-    table = zend_arena_alloc(
-        &chart->arena, sizeof(php_phathom_hash_t));
-    php_phathom_hash_init(table, &chart->arena, 8);
-    php_phathom_hash_add(root, key, table);
-    return table;
+    *slot = zend_arena_alloc(&chart->arena, sizeof(php_phathom_hash_t));
+    php_phathom_hash_init(*slot, &chart->arena, size);
+    return *slot;
 } /* }}} */
 
 /* {{{ internals */
@@ -68,7 +66,7 @@ zend_object* php_phathom_chart_create(zend_class_entry* type) {
     chart->arena =
         zend_arena_create(1024 * 64);
 
-    php_phathom_hash_init(&chart->index,    &chart->arena, 8);
+    php_phathom_hash_init(&chart->index,    &chart->arena, 2048);
     php_phathom_hash_init(&chart->waiting,  &chart->arena, 8);
     php_phathom_hash_init(&chart->nullable, &chart->arena, 8);
     php_phathom_hash_init(&chart->path,     &chart->arena, 8);
@@ -113,27 +111,23 @@ static zend_always_inline php_phathom_item_t* php_phathom_chart_index(
         .origin   = (uint64_t) item->origin,
     };
 
-    /* index[{position, rule, alt, dot, origin}] */
-    php_phathom_item_t *slot =
-        php_phathom_hash_find_binary(
-            &chart->index, &key, sizeof(key));
+    bool inserted;
+    php_phathom_item_t **slot = (php_phathom_item_t **)
+        php_phathom_hash_slot(
+            &chart->index,
+            php_phathom_hash_key_binary(&key, sizeof(key)),
+            &inserted);
 
-    if (UNEXPECTED(slot)) {
+    if (!inserted) {
         *isset = true;
-        return slot;
+        return *slot;
     }
 
     *isset = false;
-    slot = zend_arena_alloc(
+    *slot  = zend_arena_alloc(
         &chart->arena,
         sizeof(php_phathom_item_t));
-    /* index[{position, rule, alt, dot, origin}] = slot */
-    php_phathom_hash_add(
-        &chart->index,
-        php_phathom_hash_key_binary(
-            &key, sizeof(key)),
-        slot);
-    return slot;
+    return *slot;
 } /* }}}*/
 
 /* {{{ path */
@@ -143,7 +137,8 @@ static zend_always_inline void php_phathom_chart_path(php_phathom_chart_t *chart
             chart,
             &chart->path,
             php_phathom_hash_key_index(
-                (uint64_t) position));
+                (uint64_t) position),
+            32);
     /* path[position][] = item; */
     php_phathom_hash_append(path, item);
 } /* }}} */
@@ -165,7 +160,8 @@ static zend_always_inline void php_phathom_chart_nullable(
             chart,
             &chart->nullable,
             php_phathom_hash_key_binary(
-                &key, sizeof(key)));
+                &key, sizeof(key)),
+            8);
     /* nullable[{position, rule}][] = item */
     php_phathom_hash_append(nullable, item);
 } /* }}} */
@@ -187,7 +183,8 @@ static zend_always_inline void php_phathom_chart_waiting(
             chart,
             &chart->waiting,
             php_phathom_hash_key_binary(
-                &key, sizeof(key)));
+                &key, sizeof(key)),
+            16);
     /* waiting[{position, name}][] = item; */
     php_phathom_hash_append(waiting, item);
 } /* }}} */
@@ -411,7 +408,8 @@ static bool php_phathom_chart_scan(
     /* ensure path[position+1] exists */
     php_phathom_chart_table(chart,
         &chart->path,
-        php_phathom_hash_key_index((uint64_t) (position + 1)));
+        php_phathom_hash_key_index((uint64_t) (position + 1)),
+        32);
 
     /* advance items in path[position] whose terminal matches scanned token type */
     php_phathom_hash_t *path =
