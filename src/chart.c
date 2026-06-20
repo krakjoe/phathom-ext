@@ -369,8 +369,6 @@ static void php_phathom_chart_predict(
     } ZEND_HASH_FOREACH_END();
 } /* }}} */
 
-#include "ext/standard/php_var.h"
-
 /* {{{ scan */
 static bool php_phathom_chart_scan(
     php_phathom_chart_t* chart, zend_long position, zval *expected) {
