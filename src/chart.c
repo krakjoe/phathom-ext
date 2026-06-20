@@ -369,15 +369,18 @@ static void php_phathom_chart_predict(
     } ZEND_HASH_FOREACH_END();
 } /* }}} */
 
+#include "ext/standard/php_var.h"
+
 /* {{{ scan */
 static bool php_phathom_chart_scan(
     php_phathom_chart_t* chart, zend_long position, zval *expected) {
-    zval args[4], retval;
+    zval args[5], retval;
 
     ZVAL_OBJ(&args[0],  chart->buffer.object);
     ZVAL_LONG(&args[1], chart->position);
     ZVAL_COPY(&args[2], expected);
     ZVAL_STR(&args[3],  chart->grammar.token);
+    ZVAL_ARR(&args[4],  chart->grammar.literals);
 
     ZVAL_NEW_REF(&args[1], &args[1]);
     {
@@ -386,7 +389,10 @@ static bool php_phathom_chart_scan(
             chart->grammar.scanner,
             chart->grammar.lexer,
             chart->grammar.lexer->ce,
-            &retval, 4, args, NULL);
+            &retval, 
+                chart->grammar.literals == &zend_empty_array ?
+                    4 : 5
+            , args, NULL);
         chart->position =
             Z_LVAL_P(Z_UNWRAP_P(&args[1]));
     }
@@ -529,11 +535,12 @@ static zend_always_inline void php_phathom_chart_construct(php_phathom_t* phatho
     }
 
     {
-        zval args[4], retval;
+        zval args[5], retval;
         ZVAL_OBJ(&args[0],  chart->buffer.object);
         ZVAL_LONG(&args[1], chart->position);
         array_init(&args[2]); /* [] */
         ZVAL_STR(&args[3],  chart->grammar.token);
+        ZVAL_ARR(&args[4],  chart->grammar.literals);
 
         ZVAL_NEW_REF(&args[1], &args[1]);
         {
@@ -542,7 +549,10 @@ static zend_always_inline void php_phathom_chart_construct(php_phathom_t* phatho
                 chart->grammar.scanner,
                 chart->grammar.lexer,
                 chart->grammar.lexer->ce,
-                &retval, 4, args, NULL);
+                &retval,
+                    chart->grammar.literals == &zend_empty_array ?
+                        4 : 5,
+                args, NULL);
             zval_ptr_dtor(&retval);
         }
         zval_ptr_dtor(&args[1]);
