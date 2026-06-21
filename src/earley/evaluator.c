@@ -25,18 +25,18 @@
 #include "exceptions.h"
 #include "alternative.h"
 
-zend_class_entry* php_phathom_evaluator_ce = NULL;
-static zend_object_handlers php_phathom_evaluator_handlers;
+zend_class_entry* php_phathom_earley_evaluator_ce = NULL;
+static zend_object_handlers php_phathom_earley_evaluator_handlers;
 
-static zend_object* php_phathom_evaluator_create(zend_class_entry* type) {
-    php_phathom_evaluator_t* evaluator = ecalloc(1,
-        sizeof(php_phathom_evaluator_t) + zend_object_properties_size(type));
+static zend_object* php_phathom_earley_evaluator_create(zend_class_entry* type) {
+    php_phathom_earley_evaluator_t* evaluator = ecalloc(1,
+        sizeof(php_phathom_earley_evaluator_t) + zend_object_properties_size(type));
 
     zend_object_std_init(&evaluator->std, type);
     object_properties_init(&evaluator->std, type);
 
     evaluator->std.handlers =
-        &php_phathom_evaluator_handlers;
+        &php_phathom_earley_evaluator_handlers;
 
     zend_hash_init(
         &evaluator->actions, 4, NULL,
@@ -45,8 +45,8 @@ static zend_object* php_phathom_evaluator_create(zend_class_entry* type) {
     return &evaluator->std;
 }
 
-static void php_phathom_evaluator_free(zend_object* std) {
-    php_phathom_evaluator_t* evaluator = php_phathom_evaluator_fetch(std);
+static void php_phathom_earley_evaluator_free(zend_object* std) {
+    php_phathom_earley_evaluator_t* evaluator = php_phathom_earley_evaluator_fetch(std);
 
     if (evaluator->chart) {
         OBJ_RELEASE(&evaluator->chart->std);
@@ -64,8 +64,8 @@ static void php_phathom_evaluator_free(zend_object* std) {
  *   Returns ZEND_LONG_MIN when back->child is NULL or priority is false.
  * ======================================================================= */
 
-static zend_always_inline zend_long php_phathom_evaluator_priority(
-    php_phathom_back_t *back)
+static zend_always_inline zend_long php_phathom_earley_evaluator_priority(
+    php_phathom_earley_back_t *back)
 {
     if (back->child == NULL) {
         return ZEND_LONG_MIN;
@@ -78,10 +78,10 @@ static zend_always_inline zend_long php_phathom_evaluator_priority(
  *   Mirrors Evaluator::resolve().
  * ======================================================================= */
 
-static zend_always_inline php_phathom_item_t* php_phathom_evaluator_resolve(
+static zend_always_inline php_phathom_earley_item_t* php_phathom_earley_evaluator_resolve(
     php_phathom_t      *phathom,
-    php_phathom_item_t *a,
-    php_phathom_item_t *b)
+    php_phathom_earley_item_t *a,
+    php_phathom_earley_item_t *b)
 {
     zend_object *assoc =
         php_phathom_alternative_associativity(a->alternative);
@@ -98,46 +98,48 @@ static zend_always_inline php_phathom_item_t* php_phathom_evaluator_resolve(
  *   Mirrors Evaluator::select().  Returns NULL and throws on ambiguity.
  * ======================================================================= */
 
-static php_phathom_back_t* php_phathom_evaluator_select(
-    php_phathom_t           *phathom,
-    php_phathom_evaluator_t *eval,
-    php_phathom_backs_t     *backs)
+static php_phathom_earley_back_t* php_phathom_earley_evaluator_select(
+    php_phathom_t                  *phathom,
+    php_phathom_earley_evaluator_t *eval,
+    php_phathom_earley_backs_t     *backs)
 {
-    php_phathom_back_t *selected_back = php_phathom_chart_back_fetch(backs, 0);
-    php_phathom_item_t *selected      = selected_back->child;
-    zend_long           prioritized   = php_phathom_evaluator_priority(selected_back);
+    php_phathom_earley_back_t *selected_back = php_phathom_earley_chart_back_fetch(backs, 0);
+    php_phathom_earley_item_t *selected      = selected_back->child;
+    zend_long           prioritized   = php_phathom_earley_evaluator_priority(selected_back);
 
     if (prioritized == ZEND_LONG_MIN) {
         /* priority() === false */
         if (backs->used > 1) {
             php_phathom_exception_ambiguity_range(
-                phathom, eval,
+                phathom,
+                eval->context,
                 selected->rule,
                 selected->origin,
-                selected->pos - 1);
+                selected->pos - 1,
+            &eval->chart->tokens);
             return NULL;
         }
         return selected_back;
     }
 
     for (uint64_t b = 1; b < backs->used; b++) {
-        php_phathom_back_t *back =
-            php_phathom_chart_back_fetch(backs, b);
+        php_phathom_earley_back_t *back =
+            php_phathom_earley_chart_back_fetch(backs, b);
         zend_long priority =
-            php_phathom_evaluator_priority(back);
+            php_phathom_earley_evaluator_priority(back);
         if (priority > prioritized) {
             selected    = back->child;
             prioritized = priority;
         } else if (priority == prioritized) {
-            selected = php_phathom_evaluator_resolve(
+            selected = php_phathom_earley_evaluator_resolve(
                 phathom, selected, back->child);
         }
     }
 
     /* Find the Back whose child is the winning item. */
     for (uint64_t b = 0; b < backs->used; b++) {
-        php_phathom_back_t *back =
-            php_phathom_chart_back_fetch(backs, b);
+        php_phathom_earley_back_t *back =
+            php_phathom_earley_chart_back_fetch(backs, b);
         if (back->child == selected) {
             return back;
         }
@@ -151,9 +153,9 @@ static php_phathom_back_t* php_phathom_evaluator_select(
  *   actions[rule][alt] -> zend_function*
  * ======================================================================= */
 
-static zend_always_inline zend_function* php_phathom_evaluator_action(
-    php_phathom_evaluator_t *eval,
-    php_phathom_item_t      *item)
+static zend_always_inline zend_function* php_phathom_earley_evaluator_action(
+    php_phathom_earley_evaluator_t *eval,
+    php_phathom_earley_item_t      *item)
 {
     HashTable *table =
         zend_hash_find_ptr(
@@ -194,10 +196,10 @@ static zend_always_inline zend_function* php_phathom_evaluator_action(
  *   Returns false on exception.
  * ======================================================================= */
 
-static bool php_phathom_evaluator_apply(
+static bool php_phathom_earley_evaluator_apply(
     php_phathom_t           *phathom,
-    php_phathom_evaluator_t *eval,
-    php_phathom_item_t      *item,
+    php_phathom_earley_evaluator_t *eval,
+    php_phathom_earley_item_t      *item,
     zval                    *partial,
     zend_long                npartial,
     zval                    *result)
@@ -205,7 +207,7 @@ static bool php_phathom_evaluator_apply(
     if (php_phathom_alternative_action(item->alternative)) {
         /* $action(...$values) */
         zend_function *fn =
-            php_phathom_evaluator_action(eval, item);
+            php_phathom_earley_evaluator_action(eval, item);
         zend_call_known_function(fn,
             eval->context, eval->context->ce,
             result, (uint32_t) npartial, partial, NULL);
@@ -276,10 +278,10 @@ static bool php_phathom_evaluator_apply(
  *                  the result onto the heap.
  * ======================================================================= */
 
-static bool php_phathom_evaluator_execute(
+static bool php_phathom_earley_evaluator_execute(
     php_phathom_t           *phathom,
-    php_phathom_evaluator_t *eval,
-    php_phathom_item_t      *start_item,
+    php_phathom_earley_evaluator_t *eval,
+    php_phathom_earley_item_t      *start_item,
     zval                    *return_value)
 {
     php_phathom_frame_stack_t stack = {0};
@@ -295,7 +297,7 @@ static bool php_phathom_evaluator_execute(
             php_phathom_frame_pop(&stack);
 
         if (frame.kind == PHP_PHATHOM_FRAME_SELECT) {
-            php_phathom_item_t *item    = frame.item;
+            php_phathom_earley_item_t *item    = frame.item;
             zend_array *symbols =
                 php_phathom_alternative_symbols(item->alternative);
             zend_long limit   =
@@ -319,15 +321,15 @@ static bool php_phathom_evaluator_execute(
             zend_long  nslots  = 0;
 
             /* Temporary items list — max `limit` children. */
-            php_phathom_item_t **items  = emalloc(limit * sizeof(php_phathom_item_t*));
+            php_phathom_earley_item_t **items  = emalloc(limit * sizeof(php_phathom_earley_item_t*));
             zend_long            nitems = 0;
 
-            php_phathom_item_t *cur = item;
+            php_phathom_earley_item_t *cur = item;
             bool ok = true;
 
             for (zend_long pos = limit - 1; pos >= 0; pos--) {
-                php_phathom_back_t *back =
-                    php_phathom_evaluator_select(phathom, eval, &cur->backs);
+                php_phathom_earley_back_t *back =
+                    php_phathom_earley_evaluator_select(phathom, eval, &cur->backs);
                 if (!back) {
                     ok = false;
                     break;
@@ -356,7 +358,7 @@ static bool php_phathom_evaluator_execute(
                 /* All positions resolved from tokens — apply immediately. */
                 zval result;
                 ZVAL_UNDEF(&result);
-                bool applied = php_phathom_evaluator_apply(
+                bool applied = php_phathom_earley_evaluator_apply(
                     phathom, eval, item, partial, limit, &result);
                 php_phathom_frame_partial_free(partial, limit);
                 efree(slots);
@@ -402,7 +404,7 @@ static bool php_phathom_evaluator_execute(
 
             zval result;
             ZVAL_UNDEF(&result);
-            bool applied = php_phathom_evaluator_apply(
+            bool applied = php_phathom_earley_evaluator_apply(
                 phathom, eval, frame.item, frame.partial, frame.npartial, &result);
             php_phathom_frame_partial_free(frame.partial, frame.npartial);
             efree(frame.slots);
@@ -437,17 +439,17 @@ static bool php_phathom_evaluator_execute(
 PHP_METHOD(Evaluator, __construct) {
     php_phathom_t phathom =
         php_phathom_fetch();
-    php_phathom_evaluator_t* evaluator =
-        php_phathom_evaluator_fetch(Z_OBJ(EX(This)));
+    php_phathom_earley_evaluator_t* evaluator =
+        php_phathom_earley_evaluator_fetch(Z_OBJ(EX(This)));
     zend_object *chart;
 
     ZEND_PARSE_PARAMETERS_START(2, 2)
-        Z_PARAM_OBJ_OF_CLASS(chart, php_phathom_chart_ce);
+        Z_PARAM_OBJ_OF_CLASS(chart, php_phathom_earley_chart_ce);
         Z_PARAM_OBJ_OF_CLASS(evaluator->context, phathom.class.context)
     ZEND_PARSE_PARAMETERS_END();
 
     evaluator->chart =
-        php_phathom_chart_fetch(chart);
+        php_phathom_earley_chart_fetch(chart);
     GC_ADDREF(&evaluator->chart->std);
     GC_ADDREF(evaluator->context);
 }
@@ -455,27 +457,31 @@ PHP_METHOD(Evaluator, __construct) {
 PHP_METHOD(Evaluator, __invoke) {
     php_phathom_t phathom =
         php_phathom_fetch();
-    php_phathom_evaluator_t* evaluator =
-        php_phathom_evaluator_fetch(Z_OBJ(EX(This)));
+    php_phathom_earley_evaluator_t* evaluator =
+        php_phathom_earley_evaluator_fetch(Z_OBJ(EX(This)));
 
     ZEND_PARSE_PARAMETERS_NONE();
 
-    php_phathom_chart_t *chart = evaluator->chart;
+    php_phathom_earley_chart_t *chart = evaluator->chart;
 
     /* path[$limit]: the set of items that completed at the end of input. */
     php_phathom_hash_t *path =
         php_phathom_hash_find_index(
             &chart->path, (uint64_t) chart->limit);
     if (!path) {
-        php_phathom_exception_execute_nomatch(&phathom, evaluator);
+        php_phathom_exception_execute_nomatch(
+            &phathom,
+            evaluator->context,
+            chart->grammar.start,
+            &chart->tokens);
         return;
     }
 
     /* Mirror __invoke(): find the best completed start item. */
-    php_phathom_item_t *best_item     = NULL;
+    php_phathom_earley_item_t *best_item     = NULL;
     zend_long           best_priority = ZEND_LONG_MIN; /* === false */
 
-    PHP_PHATHOM_HASH_FOREACH_CURRENT(path, php_phathom_item_t, nitem) {
+    PHP_PHATHOM_HASH_FOREACH_CURRENT(path, php_phathom_earley_item_t, nitem) {
         zend_array *nalt_sym = php_phathom_alternative_symbols(nitem->alternative);
         zend_long   nsym     = (zend_long) zend_hash_num_elements(nalt_sym);
 
@@ -493,48 +499,56 @@ PHP_METHOD(Evaluator, __invoke) {
         } else if (best_priority == ZEND_LONG_MIN) {
             /* prioritized === false: second match → ambiguous */
             php_phathom_exception_ambiguity_range(
-                &phathom, evaluator, chart->grammar.start, 0, chart->limit - 1);
+                &phathom,
+                evaluator->context,
+                chart->grammar.start, 
+                0, chart->limit - 1,
+                &chart->tokens);
             return;
         } else if (priority > best_priority) {
             best_item     = nitem;
             best_priority = priority;
         } else if (priority == best_priority) {
-            best_item = php_phathom_evaluator_resolve(&phathom, best_item, nitem);
+            best_item = php_phathom_earley_evaluator_resolve(&phathom, best_item, nitem);
         }
     } PHP_PHATHOM_HASH_FOREACH_END();
 
     if (best_item == NULL) {
-        php_phathom_exception_execute_nomatch(&phathom, evaluator);
+        php_phathom_exception_execute_nomatch(
+            &phathom,
+            evaluator->context,
+            chart->grammar.start,
+            &chart->tokens);
         return;
     }
 
-    php_phathom_evaluator_execute(&phathom, evaluator, best_item, return_value);
+    php_phathom_earley_evaluator_execute(&phathom, evaluator, best_item, return_value);
 }
 
-static zend_function_entry php_phathom_evaluator_methods[] = {
+static zend_function_entry php_phathom_earley_evaluator_methods[] = {
     PHP_ME(Evaluator, __construct, arginfo_class_pharos_phathom_Earley_Evaluator___construct, ZEND_ACC_PUBLIC)
     PHP_ME(Evaluator, __invoke,    arginfo_class_pharos_phathom_Earley_Evaluator___invoke,    ZEND_ACC_PUBLIC)
     PHP_FE_END
 };
 
-PHP_MINIT_FUNCTION(PHATHOM_EVALUATOR) {
+PHP_MINIT_FUNCTION(PHATHOM_EARLEY_EVALUATOR) {
     zend_class_entry ce;
     INIT_NS_CLASS_ENTRY(ce, "pharos\\phathom\\Earley", "Evaluator",
-        php_phathom_evaluator_methods);
+        php_phathom_earley_evaluator_methods);
 
-    php_phathom_evaluator_ce = zend_register_internal_class(&ce);
-    php_phathom_evaluator_ce->create_object = php_phathom_evaluator_create;
+    php_phathom_earley_evaluator_ce = zend_register_internal_class(&ce);
+    php_phathom_earley_evaluator_ce->create_object = php_phathom_earley_evaluator_create;
 
-    memcpy(&php_phathom_evaluator_handlers,
+    memcpy(&php_phathom_earley_evaluator_handlers,
         zend_get_std_object_handlers(), sizeof(zend_object_handlers));
-    php_phathom_evaluator_handlers.offset   =
-        XtOffsetOf(php_phathom_evaluator_t, std);
-    php_phathom_evaluator_handlers.free_obj =
-        php_phathom_evaluator_free;
+    php_phathom_earley_evaluator_handlers.offset   =
+        XtOffsetOf(php_phathom_earley_evaluator_t, std);
+    php_phathom_earley_evaluator_handlers.free_obj =
+        php_phathom_earley_evaluator_free;
 
     return SUCCESS;
 }
 
-PHP_MSHUTDOWN_FUNCTION(PHATHOM_EVALUATOR) {
+PHP_MSHUTDOWN_FUNCTION(PHATHOM_EARLEY_EVALUATOR) {
     return SUCCESS;
 }

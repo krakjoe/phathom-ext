@@ -41,14 +41,20 @@ if test "$PHP_PHATHOM" != "no"; then
   ])
 
   PHP_NEW_EXTENSION([phathom], m4_normalize([
-      src/chart.c
-      src/evaluator.c
+      src/earley/chart.c
+      src/earley/evaluator.c
+      src/glr/chart.c
+      src/glr/evaluator.c
       phathom.c
     ]),
     [$ext_shared],,
     [-DZEND_ENABLE_STATIC_TSRMLS_CACHE=1])
   PHP_ADD_BUILD_DIR([$ext_builddir/src])
+  PHP_ADD_BUILD_DIR([$ext_builddir/src/earley])
+  PHP_ADD_BUILD_DIR([$ext_builddir/src/glr])
+
   PHP_ADD_INCLUDE([$ext_builddir])
+  PHP_ADD_INCLUDE([$ext_builddir/src])
 
   AS_VAR_IF([PHP_PHATHOM_COVERAGE], [no],, [PHP_ADD_MAKEFILE_FRAGMENT])
 fi

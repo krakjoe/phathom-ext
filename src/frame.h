@@ -24,8 +24,8 @@ typedef enum _php_phathom_frame_kind_t {
 } php_phathom_frame_kind_t;
 
 typedef struct {
-    php_phathom_frame_kind_t kind;
-    php_phathom_item_t      *item;
+    php_phathom_frame_kind_t   kind;
+    void                      *item;
     /* APPLY only: */
     zval                    *partial;   /* owned zval[npartial] */
     zend_long               *slots;     /* owned long[nslots]   */
@@ -110,5 +110,4 @@ static void php_phathom_frame_heap_cleanup(php_phathom_frame_heap_t *heap) {
         efree(heap->data);
     }
 }
-
 #endif

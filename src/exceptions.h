@@ -19,7 +19,6 @@
 #define HAVE_PHATHOM_EXCEPTIONS_H
 
 #include "phathom.h"
-#include "evaluator.h"
 
 #include "zend_exceptions.h"
 
@@ -32,52 +31,48 @@
 
 static void php_phathom_exception_ambiguity_range(
     php_phathom_t           *phathom,
-    php_phathom_evaluator_t *eval,
+    zend_object             *context,
     zend_string             *rule,
     zend_long                origin,
-    zend_long                end)
+    zend_long                end,
+    HashTable               *tokens)
 {
-    zval tokens = php_phathom_evaluator_tokens(eval);
-    zval args[5], exc;
-    ZVAL_OBJ_COPY(&args[0], eval->context);
-    ZVAL_STR(&args[1], rule);
-    ZVAL_COPY_VALUE(&args[2], &tokens);
-    ZVAL_LONG(&args[3], origin);
-    ZVAL_LONG(&args[4], end);
+    zval args[5], retval;
+    ZVAL_OBJ_COPY(&args[0], context);
+    ZVAL_STR(&args[1],      rule);
+    ZVAL_ARR(&args[2],      tokens);
+    ZVAL_LONG(&args[3],     origin);
+    ZVAL_LONG(&args[4],     end);
 
     zend_call_known_function(
         phathom->exception.ambiguity.range, NULL,
         phathom->class.exception.ambiguity,
-        &exc, 5, args, NULL);
-    zval_ptr_dtor(&tokens);
+        &retval, 5, args, NULL);
     zval_ptr_dtor(&args[0]);
 
-    if (!EG(exception) && Z_TYPE(exc) == IS_OBJECT) {
-        zend_throw_exception_object(&exc);
+    if (!EG(exception) && Z_TYPE(retval) == IS_OBJECT) {
+        zend_throw_exception_object(&retval);
     } else {
-        zval_ptr_dtor(&exc);
+        zval_ptr_dtor(&retval);
     }
 }
 
-static void php_phathom_exception_execute_nomatch(php_phathom_t* phathom, php_phathom_evaluator_t *eval) {
-    zval tokens = php_phathom_evaluator_tokens(eval);
-    zval args[3], exc;
-    ZVAL_OBJ_COPY(&args[0], eval->context);
-    ZVAL_STR(&args[1], eval->chart->grammar.start);
-    ZVAL_COPY_VALUE(&args[2], &tokens);
+static void php_phathom_exception_execute_nomatch(php_phathom_t* phathom, zend_object *context, zend_string *start, HashTable *tokens) {
+    zval args[3], retval;
+    ZVAL_OBJ_COPY(&args[0], context);
+    ZVAL_STR(&args[1],      start);
+    ZVAL_ARR(&args[2],      tokens);
 
     zend_call_known_function(
         phathom->exception.execute.nomatch, NULL,
         phathom->class.exception.execute,
-        &exc, 3, args, NULL);
-    zval_ptr_dtor(&tokens);
+        &retval, 3, args, NULL);
     zval_ptr_dtor(&args[0]);
 
-    if (!EG(exception) && Z_TYPE(exc) == IS_OBJECT) {
-        zend_throw_exception_object(&exc);
+    if (!EG(exception) && Z_TYPE(retval) == IS_OBJECT) {
+        zend_throw_exception_object(&retval);
     } else {
-        zval_ptr_dtor(&exc);
+        zval_ptr_dtor(&retval);
     }
 }
-
 #endif

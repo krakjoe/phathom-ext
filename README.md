@@ -3,7 +3,14 @@
 This extension re-implements the internal API of `pharos\phathom\Earley`, mirroring the userland implementation but removing the cost of
 object allocation (in this namespace).
 
-Specifically, `pharos\phathom\Earley\Chart` and `pharos\phathom\Earley\Evaluator` are implemented, and will be used transparently anywhere the extension is loaded.
+The following classes are implemented (only): 
+
+  - `pharos\phathom\Earley\Chart`
+  - `pharos\phathom\Earley\Evaluator`
+  - `pharos\phathom\GLR\Chart`
+  - `pharos\phathom\GLR\Evaluator`
+
+When the extension is loaded, they will usurp the function of the userland implementations transparently.
 
 *This extension is intended to be a faithful mirror; A competent `PHP` programmer ought to be able to navigate this `C` code if they are familiar with the `PHP` implementation and they like to fix or add a thing.*
 
@@ -41,6 +48,8 @@ Will generate a `coverage` directory with html and `coverage.info` with data.
 
 ### Notes
 
-It's important that the extension and PHP code are kept in sync; The extension treats the layout of PHP objects as stable ABI (ie, they must not change order).
+It's important that the extension and PHP code are kept in sync; The extension treats the layout of PHP objects as stable ABI (ie, the properties must not change order).
+
+*Note that, PHP objects do have a stable ABI with regard to the property layout, since [NG](https://wiki.php.net/phpng-int).*
 
 **!WIP!**

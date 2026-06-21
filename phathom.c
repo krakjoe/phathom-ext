@@ -27,8 +27,10 @@
 
 #include "phathom.h"
 
-#include "src/chart.h"
-#include "src/evaluator.h"
+#include "src/earley/chart.h"
+#include "src/earley/evaluator.h"
+#include "src/glr/chart.h"
+#include "src/glr/evaluator.h"
 
 ZEND_TLS bool php_phathom_ready = false;
 
@@ -227,10 +229,10 @@ static PHP_MINIT_FUNCTION(phathom)
 	php_phathom_word_minit(range);
 	php_phathom_word_minit(nomatch);
 
-	PHP_MINIT(PHATHOM_CHART)(INIT_FUNC_ARGS_PASSTHRU);
-	PHP_MINIT(PHATHOM_EVALUATOR)(INIT_FUNC_ARGS_PASSTHRU);
-
-	return SUCCESS;
+	PHP_MINIT(PHATHOM_EARLEY_CHART)(INIT_FUNC_ARGS_PASSTHRU);
+	PHP_MINIT(PHATHOM_EARLEY_EVALUATOR)(INIT_FUNC_ARGS_PASSTHRU);
+    PHP_MINIT(PHATHOM_GLR_CHART)(INIT_FUNC_ARGS_PASSTHRU);
+    PHP_MINIT(PHATHOM_GLR_EVALUATOR)(INIT_FUNC_ARGS_PASSTHRU);
 }
 
 #undef php_phathom_class_minit
@@ -248,10 +250,10 @@ static PHP_MINIT_FUNCTION(phathom)
 
 static PHP_MSHUTDOWN_FUNCTION(phathom)
 {
-	PHP_MSHUTDOWN(PHATHOM_CHART)(INIT_FUNC_ARGS_PASSTHRU);
-	PHP_MSHUTDOWN(PHATHOM_EVALUATOR)(INIT_FUNC_ARGS_PASSTHRU);
-
-	php_phathom_class_mshutdown(php_phathom_grammar);
+	PHP_MSHUTDOWN(PHATHOM_EARLEY_CHART)(INIT_FUNC_ARGS_PASSTHRU);
+	PHP_MSHUTDOWN(PHATHOM_EARLEY_EVALUATOR)(INIT_FUNC_ARGS_PASSTHRU);
+    PHP_MSHUTDOWN(PHATHOM_GLR_CHART)(INIT_FUNC_ARGS_PASSTHRU);
+    PHP_MSHUTDOWN(PHATHOM_GLR_EVALUATOR)(INIT_FUNC_ARGS_PASSTHRU);
 	php_phathom_class_mshutdown(php_phathom_buffer);
 	php_phathom_class_mshutdown(php_phathom_context);
 

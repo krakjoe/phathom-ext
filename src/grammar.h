@@ -30,6 +30,8 @@ typedef struct _php_phathom_grammar_t {
     zend_string   *start;
     zend_array    *rules;
     zend_array    *literals;
+    zend_object   *collector;
+    zend_object   *engine;
     zend_object   *object;
 } php_phathom_grammar_t;
 
@@ -49,6 +51,8 @@ static zend_always_inline void php_phathom_grammar_fetch(php_phathom_t* phathom,
         zval terminals;
         zval patterns;
         zval literals;
+        zval collector;
+        zval engine;
     };
 
     struct __layout__* layout =
@@ -104,6 +108,7 @@ static zend_always_inline void php_phathom_grammar_fetch(php_phathom_t* phathom,
             &grammar->lexer,
             phathom->word.scan, NULL);
     grammar->literals  = Z_ARR(layout->literals);
+    grammar->engine    = Z_OBJ(layout->engine);
 
     GC_ADDREF(grammar->object);
 }

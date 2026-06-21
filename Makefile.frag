@@ -6,7 +6,9 @@ phathom-test-coverage-phpunit:
 phathom-test-coverage-lcov: phathom-test-coverage-phpunit
 	lcov -c \
 		--directory \
-			$(top_srcdir)/src/.libs \
+			$(top_srcdir)/src/earley/.libs \
+		--directory \
+			$(top_srcdir)/src/glr/.libs \
 		--output-file \
 			$(top_srcdir)/coverage.info
 	lcov \
@@ -16,7 +18,7 @@ phathom-test-coverage-lcov: phathom-test-coverage-phpunit
 		--output-file \
 			$(top_srcdir)/coverage.info \
 		--ignore-errors \
-			unused
+			unused,unused
 
 phathom-test-coverage-html: phathom-test-coverage-lcov
 	genhtml $(top_srcdir)/coverage.info --output-directory=$(top_srcdir)/coverage
