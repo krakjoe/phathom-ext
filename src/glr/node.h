@@ -73,7 +73,7 @@ php_phathom_glr_node_new(
     zend_string             *rule,
     zend_long                alt,
     zend_object             *alternative,
-    php_phathom_glr_slot_t  *children,   /* emalloc'd -- ownership transfers */
+    php_phathom_glr_slot_t  *children,
     zend_long                nchildren,
     zend_long                pos)
 {
@@ -93,7 +93,6 @@ php_phathom_glr_node_new(
     } else {
         n->children = NULL;
     }
-    efree(children);
     return n;
 }
 #endif

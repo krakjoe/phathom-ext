@@ -190,28 +190,24 @@ php_phathom_glr_chart_reduce(
             php_phathom_glr_slot_t   *children;
             php_phathom_glr_thread_t *base =
                 php_phathom_glr_thread_pop(
-                    &chart->arena, thread, red_len, &children);
+                    &chart->arena, &arena, thread, red_len, &children);
 
             zend_long base_top = base->states[base->depth - 1];
 
             zval *goto_row_v = zend_hash_index_find(goto_t, (zend_ulong) base_top);
             if (!goto_row_v) {
-                efree(children);
                 continue;
             }
             zval *goto_row = Z_UNWRAP_P(goto_row_v);
             if (Z_TYPE_P(goto_row) != IS_ARRAY) {
-                efree(children);
                 continue;
             }
             zval *goto_v = zend_hash_find(Z_ARR_P(goto_row), red_rule);
             if (!goto_v) {
-                efree(children);
                 continue;
             }
             zend_long goto_state = Z_LVAL_P(Z_UNWRAP_P(goto_v));
 
-            /* children ownership transfers to node_new */
             php_phathom_glr_node_t *node =
                 php_phathom_glr_node_new(
                     &chart->arena,

@@ -124,19 +124,21 @@ php_phathom_glr_thread_push(
 /*
  * Thread::pop(count) -- return [base, children_slots].
  *
- * base has depth-count entries; children is an emalloc'd array of count
- * slots in left-to-right order.  Caller owns children and must efree it.
+ * base has depth-count entries; children is arena-allocated from tmp_arena
+ * in left-to-right order.  Caller does NOT own children.
  */
 static zend_always_inline php_phathom_glr_thread_t*
 php_phathom_glr_thread_pop(
     zend_arena               **arena,
+    zend_arena               **tmp_arena,
     php_phathom_glr_thread_t  *t,
     zend_long                  count,
     php_phathom_glr_slot_t   **children_out)
 {
     zend_long base_depth = t->depth - count;
 
-    *children_out = emalloc((size_t)(count ? count : 1) * sizeof(php_phathom_glr_slot_t));
+    *children_out = zend_arena_alloc(tmp_arena,
+        (size_t)(count ? count : 1) * sizeof(php_phathom_glr_slot_t));
     if (count > 0) {
         memcpy(*children_out,
             &t->nodes[base_depth],
