@@ -44,7 +44,6 @@ static zend_always_inline void php_phathom_grammar_fetch(php_phathom_t* phathom,
         zval __unused__[3];
         zval lexer;
         zval abstracts;
-        zval imports;
         zval context;
         zval token;
         zval start;
