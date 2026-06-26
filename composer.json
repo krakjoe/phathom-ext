@@ -1,0 +1,27 @@
+{
+    "name": "krakjoe/phathom-ext",
+    "description": "A multi-engine parser framework, for phathoming texty things.",
+    "type": "php-ext",
+    "license": "MIT",
+    "require": {
+        "php": ">=8.4"
+    },
+    "php-ext": {
+        "extension-name": "phathom",
+        "configure-options": [
+            {
+                "name": "with-phathom-coverage",
+                "description": "Build phathom with gcov coverage support",
+                "needs-value": false
+            },
+            {
+                "name": "with-phathom-sanitize",
+                "description": "Build phathom with AddressSanitizer support",
+                "needs-value": false
+            }
+        ]
+    },
+    "support": {
+        "source": "https://github.com/krakjoe/phathom-ext"
+    }
+}
