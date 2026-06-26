@@ -2,7 +2,7 @@
     "name": "krakjoe/phathom-ext",
     "description": "A multi-engine parser framework, for phathoming texty things.",
     "type": "php-ext",
-    "license": "MIT",
+    "license": "BSD-3-Clause",
     "require": {
         "php": ">=8.4"
     },
