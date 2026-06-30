@@ -25,7 +25,6 @@ typedef struct _php_phathom_grammar_t {
     zend_string   *start;
     zend_array    *rules;
     zend_array    *literals;
-    zend_object   *collector;
     zend_object   *engine;
     zend_object   *object;
 } php_phathom_grammar_t;
@@ -39,6 +38,8 @@ static zend_always_inline void php_phathom_grammar_fetch(php_phathom_t* phathom,
         zval __unused__[3];
         zval lexer;
         zval abstracts;
+        zval engine;
+        zval import;
         zval context;
         zval token;
         zval start;
@@ -47,7 +48,6 @@ static zend_always_inline void php_phathom_grammar_fetch(php_phathom_t* phathom,
         zval patterns;
         zval literals;
         zval collector;
-        zval engine;
     };
 
     struct __layout__* layout =
